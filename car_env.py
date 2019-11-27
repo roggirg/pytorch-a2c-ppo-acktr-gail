@@ -353,6 +353,11 @@ class CarEnvDiscrete(CarEnv):
     discrete_actions = True
 
 
+class CarEnvDiscreteWithOpponent(CarEnv):
+    discrete_actions = True
+    include_opponent = True
+
+
 if __name__ == '__main__':
     # demo_heuristic_lander(CarEnv(), render=True, action_repeat=2)
     # manual_control(CarEnv(), action_repeat=2)

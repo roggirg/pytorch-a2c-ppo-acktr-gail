@@ -35,8 +35,12 @@ def make_env(env_id, seed, rank, log_dir, allow_early_resets):
             _, domain, task = env_id.split('.')
             env = dm_control2gym.make(domain_name=domain, task_name=task)
         elif "car" in env_id:
-            from car_env import CarEnvDiscrete
-            env = CarEnvDiscrete()
+            if "oppo" in env_id:
+                from car_env import CarEnvDiscreteWithOpponent
+                env = CarEnvDiscreteWithOpponent()
+            else:
+                from car_env import CarEnvDiscrete
+                env = CarEnvDiscrete()
         else:
             env = gym.make(env_id)
 
