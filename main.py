@@ -6,6 +6,7 @@ from collections import deque
 
 import gym
 import numpy as np
+import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -98,10 +99,11 @@ def main():
     rollouts.to(device)
 
     episode_rewards = deque(maxlen=10)
+    all_rewards = []
 
     start = time.time()
-    num_updates = int(
-        args.num_env_steps) // args.num_steps // args.num_processes
+    num_updates = int(args.num_env_steps) // args.num_steps // args.num_processes
+    print("Total number of updates:", num_updates)
     for j in range(num_updates):
 
         if args.use_linear_lr_decay:
@@ -187,11 +189,16 @@ def main():
                         np.max(episode_rewards), dist_entropy, value_loss,
                         action_loss))
 
+            all_rewards.append(np.mean(episode_rewards))
+
         if (args.eval_interval is not None and len(episode_rewards) > 1
                 and j % args.eval_interval == 0):
             ob_rms = utils.get_vec_normalize(envs).ob_rms
             evaluate(actor_critic, ob_rms, args.env_name, args.seed,
                      args.num_processes, eval_log_dir, device)
+
+    plt.plot(all_rewards)
+    plt.savefig('figures/'+args.env_name+'.png')
 
 
 if __name__ == "__main__":
