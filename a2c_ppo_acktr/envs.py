@@ -39,6 +39,9 @@ def make_env(env_id, seed, rank, log_dir, allow_early_resets):
         if env_id.startswith("dm"):
             _, domain, task = env_id.split('.')
             env = dm_control2gym.make(domain_name=domain, task_name=task)
+        elif env_id.startswith("Lunar"):
+            from custom_lunar_lander import LunarLanderContinuous
+            env = LunarLanderContinuous()
         else:
             env = gym.make(env_id)
 
