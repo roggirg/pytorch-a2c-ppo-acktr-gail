@@ -1,3 +1,4 @@
+import cv2
 import os
 
 import gym
@@ -34,6 +35,51 @@ except ImportError:
     pass
 
 
+class GymWrapper(object):
+    def __init__(self, env_id, size=(84, 84)):
+        self._env = gym.make(env_id)
+        self._size = size
+        self._random = np.random.RandomState(seed=None)
+        self.reward_range = self._env.reward_range
+        self.metadata = self._env.metadata
+        self.spec = self._env.spec
+
+    @property
+    def observation_space(self):
+        shape = self._size + (3,)
+        space = gym.spaces.Box(low=0, high=255, shape=shape, dtype=np.uint8)
+        return space
+
+    @property
+    def action_space(self):
+        return self._env.action_space
+
+    def close(self):
+        return self._env.close()
+
+    def seed(self, seed):
+        self._env.seed(seed)
+
+    def reset(self):
+        _ = self._env.reset()
+        obs = self._get_obs()
+        return obs
+
+    def step(self, action):
+        _, reward, done, info = self._env.step(action)
+        obs = self._get_obs()
+        return obs, reward, done, info
+
+    def _get_obs(self):
+        image = self.render(mode='rgb_array')
+        image = cv2.resize(image, (84, 84), interpolation=cv2.INTER_LINEAR)
+        image = np.clip(image, 0, 255).astype(np.uint8)
+        return image
+
+    def render(self, mode='rgb_array'):
+        return self._env.render(mode)
+
+
 def make_env(env_id, seed, rank, log_dir, allow_early_resets):
     def _thunk():
         if env_id.startswith("dm"):
@@ -42,31 +88,28 @@ def make_env(env_id, seed, rank, log_dir, allow_early_resets):
         elif env_id.startswith("Lunar"):
             from custom_lunar_lander import LunarLanderContinuous
             env = LunarLanderContinuous()
+        elif env_id.startswith("CarEnv"):
+            env = GymWrapper(env_id)
         else:
             env = gym.make(env_id)
 
-        is_atari = hasattr(gym.envs, 'atari') and isinstance(
-            env.unwrapped, gym.envs.atari.atari_env.AtariEnv)
+        is_atari = hasattr(gym.envs, 'atari') and isinstance(env.unwrapped, gym.envs.atari.atari_env.AtariEnv)
         if is_atari:
             env = make_atari(env_id)
 
         env.seed(seed + rank)
-
         obs_shape = env.observation_space.shape
 
         if str(env.__class__.__name__).find('TimeLimit') >= 0:
             env = TimeLimitMask(env)
 
         if log_dir is not None:
-            env = bench.Monitor(
-                env,
-                os.path.join(log_dir, str(rank)),
-                allow_early_resets=allow_early_resets)
+            env = bench.Monitor(env, os.path.join(log_dir, str(rank)), allow_early_resets=allow_early_resets)
 
         if is_atari:
             if len(env.observation_space.shape) == 3:
                 env = wrap_deepmind(env)
-        elif len(env.observation_space.shape) == 3:
+        elif len(env.observation_space.shape) == 3 and not env_id.startswith("CarEnv"):
             raise NotImplementedError(
                 "CNN models work only for atari,\n"
                 "please use a custom wrapper for a custom pixel input env.\n"
@@ -82,21 +125,12 @@ def make_env(env_id, seed, rank, log_dir, allow_early_resets):
     return _thunk
 
 
-def make_vec_envs(env_name,
-                  seed,
-                  num_processes,
-                  gamma,
-                  log_dir,
-                  device,
-                  allow_early_resets,
-                  num_frame_stack=None):
-    envs = [
-        make_env(env_name, seed, i, log_dir, allow_early_resets)
-        for i in range(num_processes)
-    ]
+def make_vec_envs(env_name, seed, num_processes, gamma, log_dir, device, allow_early_resets, num_frame_stack=None):
+    envs = [make_env(env_name, seed, i, log_dir, allow_early_resets) for i in range(num_processes)]
 
     if len(envs) > 1:
-        envs = ShmemVecEnv(envs, context='fork')
+        # envs = ShmemVecEnv(envs, context='fork')
+        envs = ShmemVecEnv(envs, context='spawn')
     else:
         envs = DummyVecEnv(envs)
 
