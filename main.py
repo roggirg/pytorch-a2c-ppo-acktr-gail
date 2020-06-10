@@ -194,7 +194,7 @@ def main():
     # plt.plot(all_rewards)
     # plt.savefig('figures/'+args.env_name+'_'+args.config+'_s'+str(args.seed)+'.png')
     save_path = os.path.join(args.save_dir, args.algo)
-    np.save(os.path.join(save_path,+args.env_name+'_'+args.config+'_s'+str(args.seed)+'.npy'), all_rewards)
+    np.save(os.path.join(save_path, args.env_name+'_'+args.config+'_s'+str(args.seed)+'.npy'), all_rewards)
 
 
 if __name__ == "__main__":
