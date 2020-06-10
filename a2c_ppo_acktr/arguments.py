@@ -154,6 +154,11 @@ def get_args():
         type=str,
         default='',
         help='training config name for comparisons')
+    parser.add_argument(
+        '--pixels',
+        action='store_true',
+        default=False,
+        help='Run experiments from Pixels')
     args = parser.parse_args()
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()

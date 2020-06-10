@@ -80,7 +80,7 @@ class GymWrapper(object):
         return self._env.render(mode)
 
 
-def make_env(env_id, seed, rank, log_dir, allow_early_resets):
+def make_env(env_id, seed, rank, log_dir, allow_early_resets, pixels=False):
     def _thunk():
         if env_id.startswith("dm"):
             _, domain, task = env_id.split('.')
@@ -88,7 +88,7 @@ def make_env(env_id, seed, rank, log_dir, allow_early_resets):
         elif env_id.startswith("Lunar"):
             from custom_lunar_lander import LunarLanderContinuous
             env = LunarLanderContinuous()
-        elif env_id.startswith("CarEnv"):
+        elif env_id.startswith("CarEnv") and pixels:
             env = GymWrapper(env_id)
         else:
             env = gym.make(env_id)
@@ -125,8 +125,9 @@ def make_env(env_id, seed, rank, log_dir, allow_early_resets):
     return _thunk
 
 
-def make_vec_envs(env_name, seed, num_processes, gamma, log_dir, device, allow_early_resets, num_frame_stack=None):
-    envs = [make_env(env_name, seed, i, log_dir, allow_early_resets) for i in range(num_processes)]
+def make_vec_envs(env_name, seed, num_processes, gamma, log_dir, device, allow_early_resets, num_frame_stack=None,
+                  pixels=False):
+    envs = [make_env(env_name, seed, i, log_dir, allow_early_resets, pixels=pixels) for i in range(num_processes)]
 
     if len(envs) > 1:
         # envs = ShmemVecEnv(envs, context='fork')
@@ -267,14 +268,14 @@ class VecPyTorchFrameStack(VecEnvWrapper):
         self.stacked_obs = torch.zeros((venv.num_envs, ) +
                                        low.shape).to(device)
 
-        observation_space = gym.spaces.Box(
-            low=low, high=high, dtype=venv.observation_space.dtype)
+        observation_space = gym.spaces.Box(low=low, high=high, dtype=venv.observation_space.dtype)
         VecEnvWrapper.__init__(self, venv, observation_space=observation_space)
 
     def step_wait(self):
+        stacked_obs = self.stacked_obs.clone()
         obs, rews, news, infos = self.venv.step_wait()
-        self.stacked_obs[:, :-self.shape_dim0] = \
-            self.stacked_obs[:, self.shape_dim0:]
+        stacked_obs[:, :-self.shape_dim0] = self.stacked_obs[:, self.shape_dim0:]
+        self.stacked_obs = stacked_obs
         for (i, new) in enumerate(news):
             if new:
                 self.stacked_obs[i] = 0
