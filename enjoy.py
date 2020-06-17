@@ -1,4 +1,5 @@
 import argparse
+import cv2
 import os
 # workaround to unpickle olf model files
 import sys
@@ -36,20 +37,13 @@ args = parser.parse_args()
 
 args.det = not args.non_det
 
-env = make_vec_envs(
-    args.env_name,
-    args.seed + 1000,
-    1,
-    None,
-    None,
-    device='cpu',
-    allow_early_resets=False)
+env = make_vec_envs(args.env_name, args.seed+1000, 1, None, None, device='cpu', allow_early_resets=False, pixels=False)
 
 # Get a render function
 render_func = get_render_func(env)
 
 # We need to use the same statistics for normalization as used in training
-actor_critic, ob_rms = torch.load(os.path.join(args.load_dir, args.env_name + '_state_s'+str(args.seed) + ".pt"),
+actor_critic, ob_rms = torch.load(os.path.join(args.load_dir, args.env_name + '_bin_imgs_s'+str(args.seed) + ".pt"),
                                   map_location=lambda storage, loc: storage)
 
 vec_norm = get_vec_normalize(env)
@@ -57,8 +51,7 @@ if vec_norm is not None:
     vec_norm.eval()
     vec_norm.ob_rms = ob_rms
 
-recurrent_hidden_states = torch.zeros(1,
-                                      actor_critic.recurrent_hidden_state_size)
+recurrent_hidden_states = torch.zeros(1, actor_critic.recurrent_hidden_state_size)
 masks = torch.zeros(1, 1)
 
 obs = env.reset()
@@ -74,6 +67,7 @@ if args.env_name.find('Bullet') > -1:
         if (p.getBodyInfo(i)[0].decode() == "torso"):
             torsoId = i
 
+total_reward = 0
 while True:
     with torch.no_grad():
         value, action, _, recurrent_hidden_states = actor_critic.act(
@@ -81,6 +75,10 @@ while True:
 
     # Obser reward and next obs
     obs, reward, done, _ = env.step(action)
+    total_reward += reward
+    if done:
+        print("Total Reward:", total_reward)
+        total_reward = 0
 
     masks.fill_(0.0 if done else 1.0)
 

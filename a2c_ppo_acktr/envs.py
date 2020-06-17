@@ -1,5 +1,6 @@
 import cv2
 import os
+import matplotlib.pyplot as plt
 
 import gym
 import numpy as np
@@ -35,7 +36,7 @@ except ImportError:
     pass
 
 
-class GymWrapper(object):
+class PixelWrapper(object):
     def __init__(self, env_id, size=(84, 84)):
         self._env = gym.make(env_id)
         self._size = size
@@ -80,6 +81,50 @@ class GymWrapper(object):
         return self._env.render(mode)
 
 
+class BinWrapper(object):
+    def __init__(self, env_id, size=(84, 84)):
+        self._env = gym.make(env_id)
+        self._size = size
+        self._random = np.random.RandomState(seed=None)
+        self.reward_range = self._env.reward_range
+        self.metadata = self._env.metadata
+        self.spec = self._env.spec
+        self.t = 0
+
+    @property
+    def observation_space(self):
+        shape = self._size + (4,)
+        space = gym.spaces.Box(low=0, high=255, shape=shape, dtype=np.uint8)
+        return space
+
+    @property
+    def action_space(self):
+        return self._env.action_space
+
+    def close(self):
+        return self._env.close()
+
+    def seed(self, seed):
+        self._env.seed(seed)
+
+    def reset(self):
+        return self._env.reset()
+
+    def step(self, action):
+        obs, reward, done, info = self._env.step(action)
+        return obs, reward, done, info
+
+    # def _resize(self, obs):
+    #     for i in range(4):
+    #         plt.imshow(obs[:, :, i], cmap="gray")
+    #         plt.savefig("temp_figs/img_T"+str(self.t)+"_M"+str(i)+".png")
+    #     self.t += 1
+    #     return obs
+
+    def render(self, mode='rgb_array'):
+        return self._env.render(mode)
+
+
 def make_env(env_id, seed, rank, log_dir, allow_early_resets, pixels=False):
     def _thunk():
         if env_id.startswith("dm"):
@@ -88,8 +133,11 @@ def make_env(env_id, seed, rank, log_dir, allow_early_resets, pixels=False):
         elif env_id.startswith("Lunar"):
             from custom_lunar_lander import LunarLanderContinuous
             env = LunarLanderContinuous()
-        elif env_id.startswith("CarEnv") and pixels:
-            env = GymWrapper(env_id)
+        elif env_id.startswith("CarEnv"):
+            if pixels:
+                env = PixelWrapper(env_id)
+            else:
+                env = BinWrapper(env_id)
         else:
             env = gym.make(env_id)
 
@@ -117,7 +165,7 @@ def make_env(env_id, seed, rank, log_dir, allow_early_resets, pixels=False):
 
         # If the input has shape (W,H,3), wrap for PyTorch convolutions
         obs_shape = env.observation_space.shape
-        if len(obs_shape) == 3 and obs_shape[2] in [1, 3]:
+        if len(obs_shape) == 3 and obs_shape[2] in [1, 3, 4]:
             env = TransposeImage(env, op=[2, 0, 1])
 
         return env
@@ -146,7 +194,8 @@ def make_vec_envs(env_name, seed, num_processes, gamma, log_dir, device, allow_e
     if num_frame_stack is not None:
         envs = VecPyTorchFrameStack(envs, num_frame_stack, device)
     elif len(envs.observation_space.shape) == 3:
-        envs = VecPyTorchFrameStack(envs, 4, device)
+        FRAME_STACK = 3
+        envs = VecPyTorchFrameStack(envs, FRAME_STACK, device)
 
     return envs
 
@@ -265,8 +314,7 @@ class VecPyTorchFrameStack(VecEnvWrapper):
 
         if device is None:
             device = torch.device('cpu')
-        self.stacked_obs = torch.zeros((venv.num_envs, ) +
-                                       low.shape).to(device)
+        self.stacked_obs = torch.zeros((venv.num_envs, ) + low.shape).to(device)
 
         observation_space = gym.spaces.Box(low=low, high=high, dtype=venv.observation_space.dtype)
         VecEnvWrapper.__init__(self, venv, observation_space=observation_space)

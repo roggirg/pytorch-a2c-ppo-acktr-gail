@@ -46,8 +46,7 @@ class RolloutStorage(object):
     def insert(self, obs, recurrent_hidden_states, actions, action_log_probs,
                value_preds, rewards, masks, bad_masks):
         self.obs[self.step + 1].copy_(obs)
-        self.recurrent_hidden_states[self.step +
-                                     1].copy_(recurrent_hidden_states)
+        self.recurrent_hidden_states[self.step + 1].copy_(recurrent_hidden_states)
         self.actions[self.step].copy_(actions)
         self.action_log_probs[self.step].copy_(action_log_probs)
         self.value_preds[self.step].copy_(value_preds)
@@ -163,14 +162,12 @@ class RolloutStorage(object):
             for offset in range(num_envs_per_batch):
                 ind = perm[start_ind + offset]
                 obs_batch.append(self.obs[:-1, ind])
-                recurrent_hidden_states_batch.append(
-                    self.recurrent_hidden_states[0:1, ind])
+                recurrent_hidden_states_batch.append(self.recurrent_hidden_states[0:1, ind])
                 actions_batch.append(self.actions[:, ind])
                 value_preds_batch.append(self.value_preds[:-1, ind])
                 return_batch.append(self.returns[:-1, ind])
                 masks_batch.append(self.masks[:-1, ind])
-                old_action_log_probs_batch.append(
-                    self.action_log_probs[:, ind])
+                old_action_log_probs_batch.append(self.action_log_probs[:, ind])
                 adv_targ.append(advantages[:, ind])
 
             T, N = self.num_steps, num_envs_per_batch
@@ -194,8 +191,7 @@ class RolloutStorage(object):
             value_preds_batch = _flatten_helper(T, N, value_preds_batch)
             return_batch = _flatten_helper(T, N, return_batch)
             masks_batch = _flatten_helper(T, N, masks_batch)
-            old_action_log_probs_batch = _flatten_helper(T, N, \
-                    old_action_log_probs_batch)
+            old_action_log_probs_batch = _flatten_helper(T, N,old_action_log_probs_batch)
             adv_targ = _flatten_helper(T, N, adv_targ)
 
             yield obs_batch, recurrent_hidden_states_batch, actions_batch, \

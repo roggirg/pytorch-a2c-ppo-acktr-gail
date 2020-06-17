@@ -126,13 +126,12 @@ def main():
             # If done then clean the history of observations.
             masks = torch.FloatTensor([[0.0] if done_ else [1.0] for done_ in done])
             bad_masks = torch.FloatTensor([[0.0] if 'bad_transition' in info.keys() else [1.0] for info in infos])
-            rollouts.insert(obs, recurrent_hidden_states, action,
-                            action_log_prob, value, reward, masks, bad_masks)
+            rollouts.insert(obs, recurrent_hidden_states, action, action_log_prob, value, reward, masks, bad_masks)
 
         with torch.no_grad():
             next_value = actor_critic.get_value(
-                rollouts.obs[-1], rollouts.recurrent_hidden_states[-1],
-                rollouts.masks[-1]).detach()
+                rollouts.obs[-1], rollouts.recurrent_hidden_states[-1], rollouts.masks[-1]
+            ).detach()
 
         if args.gail:
             if j >= 10:
@@ -150,32 +149,29 @@ def main():
                     rollouts.obs[step], rollouts.actions[step], args.gamma,
                     rollouts.masks[step])
 
-        rollouts.compute_returns(next_value, args.use_gae, args.gamma,
-                                 args.gae_lambda, args.use_proper_time_limits)
+        rollouts.compute_returns(next_value, args.use_gae, args.gamma, args.gae_lambda, args.use_proper_time_limits)
 
         value_loss, action_loss, dist_entropy = agent.update(rollouts)
 
         rollouts.after_update()
 
         # save for every interval-th episode or for the last epoch
-        if (j % args.save_interval == 0
-                or j == num_updates - 1) and args.save_dir != "":
+        if (j % args.save_interval == 0 or j == num_updates - 1) and args.save_dir != "":
             save_path = os.path.join(args.save_dir, args.algo)
             try:
                 os.makedirs(save_path)
             except OSError:
                 pass
 
-            torch.save([
-                actor_critic,
-                getattr(utils.get_vec_normalize(envs), 'ob_rms', None)
-            ], os.path.join(save_path, args.env_name + '_' + args.config + '_s'+str(args.seed)+".pt"))
+            torch.save([actor_critic, getattr(utils.get_vec_normalize(envs), 'ob_rms', None)],
+                       os.path.join(save_path, args.env_name + '_' + args.config + '_s'+str(args.seed)+".pt"))
 
         if j % args.log_interval == 0 and len(episode_rewards) > 1:
             total_num_steps = (j + 1) * args.num_processes * args.num_steps
             end = time.time()
             print(
-                "Updates {}, num timesteps {}, FPS {} \n Last {} training episodes: mean/median reward {:.1f}/{:.1f}, min/max reward {:.1f}/{:.1f}\n"
+                "Updates {}, num timesteps {}, FPS {} \n Last {} training episodes: "
+                "mean/median reward {:.1f}/{:.1f}, min/max reward {:.1f}/{:.1f}\n"
                 .format(j, total_num_steps,
                         int(total_num_steps / (end - start)),
                         len(episode_rewards), np.mean(episode_rewards),
@@ -185,11 +181,9 @@ def main():
 
             all_rewards.append(np.mean(episode_rewards))
 
-        if (args.eval_interval is not None and len(episode_rewards) > 1
-                and j % args.eval_interval == 0):
+        if args.eval_interval is not None and len(episode_rewards) > 1 and j % args.eval_interval == 0:
             ob_rms = utils.get_vec_normalize(envs).ob_rms
-            evaluate(actor_critic, ob_rms, args.env_name, args.seed,
-                     args.num_processes, eval_log_dir, device)
+            evaluate(actor_critic, ob_rms, args.env_name, args.seed, args.num_processes, eval_log_dir, device)
 
     # plt.plot(all_rewards)
     # plt.savefig('figures/'+args.env_name+'_'+args.config+'_s'+str(args.seed)+'.png')
