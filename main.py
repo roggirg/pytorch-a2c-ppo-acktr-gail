@@ -155,17 +155,6 @@ def main():
 
         rollouts.after_update()
 
-        # save for every interval-th episode or for the last epoch
-        if (j % args.save_interval == 0 or j == num_updates - 1) and args.save_dir != "":
-            save_path = os.path.join(args.save_dir, args.algo)
-            try:
-                os.makedirs(save_path)
-            except OSError:
-                pass
-
-            torch.save([actor_critic, getattr(utils.get_vec_normalize(envs), 'ob_rms', None)],
-                       os.path.join(save_path, args.env_name + '_' + args.config + '_s'+str(args.seed)+".pt"))
-
         if j % args.log_interval == 0 and len(episode_rewards) > 1:
             total_num_steps = (j + 1) * args.num_processes * args.num_steps
             end = time.time()
@@ -181,14 +170,23 @@ def main():
 
             all_rewards.append(np.mean(episode_rewards))
 
+        # save for every interval-th episode or for the last epoch
+        if (j % args.save_interval == 0 or j == num_updates - 1) and args.save_dir != "":
+            save_path = os.path.join(args.save_dir, args.algo)
+            try:
+                os.makedirs(save_path)
+            except OSError:
+                pass
+
+            torch.save([actor_critic, getattr(utils.get_vec_normalize(envs), 'ob_rms', None)],
+                       os.path.join(save_path, args.env_name + '_' + args.config + '_s'+str(args.seed)+".pt"))
+
+            np.save(os.path.join(save_path, args.env_name + '_' + args.config + '_s' + str(args.seed) + '.npy'),
+                    all_rewards)
+
         if args.eval_interval is not None and len(episode_rewards) > 1 and j % args.eval_interval == 0:
             ob_rms = utils.get_vec_normalize(envs).ob_rms
             evaluate(actor_critic, ob_rms, args.env_name, args.seed, args.num_processes, eval_log_dir, device)
-
-    # plt.plot(all_rewards)
-    # plt.savefig('figures/'+args.env_name+'_'+args.config+'_s'+str(args.seed)+'.png')
-    save_path = os.path.join(args.save_dir, args.algo)
-    np.save(os.path.join(save_path, args.env_name+'_'+args.config+'_s'+str(args.seed)+'.npy'), all_rewards)
 
 
 if __name__ == "__main__":
