@@ -43,7 +43,7 @@ env = make_vec_envs(args.env_name, args.seed+1000, 1, None, None, device='cpu', 
 render_func = get_render_func(env)
 
 # We need to use the same statistics for normalization as used in training
-actor_critic, ob_rms = torch.load(os.path.join(args.load_dir, args.env_name + '_bin_imgs_s'+str(args.seed) + ".pt"),
+actor_critic, ob_rms = torch.load(os.path.join(args.load_dir, args.env_name + '_s'+str(args.seed) + ".pt"),
                                   map_location=lambda storage, loc: storage)
 
 vec_norm = get_vec_normalize(env)

@@ -2,15 +2,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-# labels = {
-#     'NoIntent': {'fnames': "CarEnv-TwoOpponent-v0_state_s", "color": 'r'},
-#     'Intent': {'fnames': "CarEnv-TwoOpponentWithIntention-v0_state_s", "color": 'b'},
-# }
-
 labels = {
-    'NoIntent': {'fnames': "CarEnv-TwoOpponent-v0_bin_imgs_s", "color": 'r'},
-    'Intent': {'fnames': "CarEnv-TwoOpponentWithIntention-v0_bin_imgs_s", "color": 'b'},
-    'Old_NoIntent': {'fnames': "CarEnv-TwoOpponent-v0_bin_imgs_oldarch_s", "color": 'g'},
+    'NoIntent': {'fnames': "CarEnv-TwoOpponent-v0_states_newR_s", "color": 'r'},
+    'Intent': {'fnames': "CarEnv-TwoOpponentWithIntention-v0_states_newR_s", "color": 'b'},
 }
 
 
@@ -33,4 +27,4 @@ for key, vals in labels.items():
 plt.legend()
 plt.xlabel('Training Step', fontsize=18)
 plt.ylabel('Episodic Reward', fontsize=16)
-plt.savefig("CarEnv-TwoOpponent_binIMG_ppo_experiments.png")
+plt.savefig("CarEnv-TwoOpponent_states_newR_ppo_experiments.png")
