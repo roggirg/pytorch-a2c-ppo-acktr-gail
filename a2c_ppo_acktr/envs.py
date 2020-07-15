@@ -131,8 +131,8 @@ def make_vec_envs(env_name, seed, num_processes, gamma, log_dir, device, allow_e
     envs = [make_env(env_name, seed, i, log_dir, allow_early_resets, pixels=pixels) for i in range(num_processes)]
 
     if len(envs) > 1:
-        # envs = ShmemVecEnv(envs, context='fork')
-        envs = ShmemVecEnv(envs, context='spawn')
+        envs = ShmemVecEnv(envs, context='fork')
+        # envs = ShmemVecEnv(envs, context='spawn')
     else:
         envs = DummyVecEnv(envs)
 
@@ -238,9 +238,7 @@ class VecNormalize(VecNormalize_):
         if self.ob_rms:
             if self.training and update:
                 self.ob_rms.update(obs)
-            obs = np.clip((obs - self.ob_rms.mean) /
-                          np.sqrt(self.ob_rms.var + self.epsilon),
-                          -self.clipob, self.clipob)
+            obs = np.clip((obs - self.ob_rms.mean) / np.sqrt(self.ob_rms.var + self.epsilon), -self.clipob, self.clipob)
             return obs
         else:
             return obs

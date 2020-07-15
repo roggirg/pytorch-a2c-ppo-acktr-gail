@@ -43,7 +43,7 @@ env = make_vec_envs(args.env_name, args.seed+1000, 1, None, None, device='cpu', 
 render_func = get_render_func(env)
 
 # We need to use the same statistics for normalization as used in training
-actor_critic, ob_rms = torch.load(os.path.join(args.load_dir, args.env_name + '_s'+str(args.seed) + ".pt"),
+actor_critic, ob_rms = torch.load(os.path.join(args.load_dir, args.env_name + '__s'+str(args.seed) + ".pt"),
                                   map_location=lambda storage, loc: storage)
 
 vec_norm = get_vec_normalize(env)
@@ -68,6 +68,7 @@ if args.env_name.find('Bullet') > -1:
             torsoId = i
 
 total_reward = 0
+t = 0
 while True:
     with torch.no_grad():
         value, action, _, recurrent_hidden_states = actor_critic.act(
@@ -76,6 +77,7 @@ while True:
     # Obser reward and next obs
     obs, reward, done, _ = env.step(action)
     total_reward += reward
+    t += 1
     if done:
         print("Total Reward:", total_reward)
         total_reward = 0
