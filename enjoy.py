@@ -37,7 +37,7 @@ args = parser.parse_args()
 
 args.det = not args.non_det
 
-env = make_vec_envs(args.env_name, args.seed+1000, 1, None, None, device='cpu', allow_early_resets=False, pixels=False)
+env = make_vec_envs(args.env_name, 1000, 1, None, None, device='cpu', allow_early_resets=False, pixels=False)
 
 # Get a render function
 render_func = get_render_func(env)
@@ -75,10 +75,11 @@ while True:
             obs, recurrent_hidden_states, masks, deterministic=args.det)
 
     # Obser reward and next obs
-    obs, reward, done, _ = env.step(action)
+    obs, reward, done, info = env.step(action)
     total_reward += reward
     t += 1
     if done:
+        print(info)
         print("Total Reward:", total_reward)
         total_reward = 0
 
