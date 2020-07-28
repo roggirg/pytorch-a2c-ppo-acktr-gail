@@ -24,6 +24,9 @@ from evaluation import evaluate
 def main():
     args = get_args()
 
+    args.config += args.base_mlp
+    print("CONFIG:", args.config)
+
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
 
@@ -43,7 +46,7 @@ def main():
                          device, False, pixels=args.pixels)
 
     actor_critic = Policy(envs.observation_space.shape, envs.action_space,
-                          base_kwargs={'recurrent': args.recurrent_policy})
+                          base_kwargs={'recurrent': args.recurrent_policy}, base_mlp=args.base_mlp)
     actor_critic.to(device)
 
     if args.algo == 'a2c':

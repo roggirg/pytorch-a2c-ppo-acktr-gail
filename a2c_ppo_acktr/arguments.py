@@ -159,6 +159,11 @@ def get_args():
         action='store_true',
         default=False,
         help='Run experiments from Pixels')
+    parser.add_argument(
+        '--base-mlp',
+        default='simple',
+        choices=['simple', 'deep', 'special'],
+        help='Run experiments from Pixels')
     args = parser.parse_args()
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()

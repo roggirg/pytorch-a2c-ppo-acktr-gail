@@ -13,7 +13,7 @@ class Flatten(nn.Module):
 
 
 class Policy(nn.Module):
-    def __init__(self, obs_shape, action_space, base=None, base_kwargs=None):
+    def __init__(self, obs_shape, action_space, base=None, base_kwargs=None, base_mlp='simple'):
         super(Policy, self).__init__()
         if base_kwargs is None:
             base_kwargs = {}
@@ -21,7 +21,12 @@ class Policy(nn.Module):
             if len(obs_shape) == 3:
                 base = CNNBase
             elif len(obs_shape) == 1:
-                base = MLPBase
+                if 'simple' in base_mlp:
+                    base = MLPBase
+                elif 'deep' in base_mlp:
+                    base = DeepMLPBase
+                elif 'special' in base_mlp:
+                    base = SpecialMLP
             else:
                 raise NotImplementedError
 
@@ -229,6 +234,117 @@ class MLPBase(NNBase):
 
         if self.is_recurrent:
             x, rnn_hxs = self._forward_gru(x, rnn_hxs, masks)
+
+        hidden_critic = self.critic(x)
+        hidden_actor = self.actor(x)
+
+        return self.critic_linear(hidden_critic), hidden_actor, rnn_hxs
+
+
+class DeepMLPBase(NNBase):
+    def __init__(self, num_inputs, recurrent=False, hidden_size=64):
+        super(DeepMLPBase, self).__init__(recurrent, num_inputs, hidden_size)
+
+        if recurrent:
+            num_inputs = hidden_size
+
+        init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
+                               constant_(x, 0), np.sqrt(2))
+
+        self.actor = nn.Sequential(
+            init_(nn.Linear(num_inputs, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh(),
+        )
+
+        self.critic = nn.Sequential(
+            init_(nn.Linear(num_inputs, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh(),
+        )
+
+        self.critic_linear = init_(nn.Linear(hidden_size, 1))
+
+        self.train()
+
+    def forward(self, inputs, rnn_hxs, masks):
+        x = inputs
+
+        if self.is_recurrent:
+            x, rnn_hxs = self._forward_gru(x, rnn_hxs, masks)
+
+        hidden_critic = self.critic(x)
+        hidden_actor = self.actor(x)
+
+        return self.critic_linear(hidden_critic), hidden_actor, rnn_hxs
+
+
+class SpecialMLP(NNBase):
+    '''
+    MLP class specialized for car environment with opponents.
+    '''
+    def __init__(self, num_inputs, recurrent=False, hidden_size=64):
+        super(SpecialMLP, self).__init__(recurrent, num_inputs, hidden_size)
+
+        recurrent = False
+        if recurrent:
+            num_inputs = hidden_size
+
+        agent_dim = 7  # pos(2), vel(2), heading(1), dist_to_opt_path (2)
+        env_dim = 6  # four corners of the environment(4), light status(2)
+        opponent_dim = 5  # pos(2), vel(2), heading(1)
+        intention_dim = 4  # one-hot vector for four possible intentions(4)
+        self.num_opponents = int((num_inputs - agent_dim - env_dim) / (opponent_dim+intention_dim+1))
+        act_crit_dim = 2*self.num_opponents*hidden_size//8 + 2*hidden_size
+
+        init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
+                               constant_(x, 0), np.sqrt(2))
+
+        self.agent_model = nn.Sequential(
+            init_(nn.Linear(agent_dim, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh()
+        )
+
+        self.env_model = nn.Sequential(
+            init_(nn.Linear(env_dim, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh())
+
+        self.opponent_model = nn.Sequential(
+            init_(nn.Linear(opponent_dim, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size//8)), nn.Tanh()
+        )
+
+        self.intention_mlp = nn.Sequential(
+            init_(nn.Linear(intention_dim, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size//8)), nn.Tanh()
+        )
+
+        self.actor = nn.Sequential(
+            init_(nn.Linear(act_crit_dim, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh())
+
+        self.critic = nn.Sequential(
+            init_(nn.Linear(act_crit_dim, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh())
+
+        self.critic_linear = init_(nn.Linear(hidden_size, 1))
+
+        self.train()
+
+    def forward(self, inputs, rnn_hxs, masks):
+        x = inputs
+        agent_state = self.agent_model(x[:, 0:7])
+        env_state = self.env_model(x[:, 7:13])
+
+        opponent_state = torch.tensor([]).to(device="cuda")
+        for i in range(self.num_opponents):
+            opp_state = self.opponent_model(x[:, 13+10*i:13+10*i+5]) * x[:, 13+10*i+9].unsqueeze(1)
+            opp_intent = self.intention_mlp(x[:, 13+10*i+5:13+10*i+9]) * x[:, 13+10*i+9].unsqueeze(1)
+            opponent_state = torch.cat((opponent_state, torch.cat((opp_state, opp_intent), dim=-1)), dim=-1)
+
+        x = torch.cat((agent_state, env_state, opponent_state), dim=-1)
 
         hidden_critic = self.critic(x)
         hidden_actor = self.actor(x)

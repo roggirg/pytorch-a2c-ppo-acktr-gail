@@ -33,26 +33,35 @@ parser.add_argument(
     action='store_true',
     default=False,
     help='whether to use a non-deterministic policy')
+parser.add_argument(
+    '--config',
+    type=str,
+    default='',
+    help='training config name for comparisons')
 args = parser.parse_args()
 
 args.det = not args.non_det
+args.cuda = torch.cuda.is_available()
+if args.cuda:
+    device = torch.device("cuda:0" if args.cuda else "cpu")
 
-env = make_vec_envs(args.env_name, 1000, 1, None, None, device='cpu', allow_early_resets=False, pixels=False)
+env = make_vec_envs(args.env_name, 1000, 1, None, None, device=device, allow_early_resets=False, pixels=False)
 
 # Get a render function
 render_func = get_render_func(env)
 
 # We need to use the same statistics for normalization as used in training
-actor_critic, ob_rms = torch.load(os.path.join(args.load_dir, args.env_name + '__s'+str(args.seed) + ".pt"),
+actor_critic, ob_rms = torch.load(os.path.join(args.load_dir, args.env_name + '_'+args.config+'_s'+str(args.seed) + ".pt"),
                                   map_location=lambda storage, loc: storage)
+actor_critic.to(device)
 
 vec_norm = get_vec_normalize(env)
 if vec_norm is not None:
     vec_norm.eval()
     vec_norm.ob_rms = ob_rms
 
-recurrent_hidden_states = torch.zeros(1, actor_critic.recurrent_hidden_state_size)
-masks = torch.zeros(1, 1)
+recurrent_hidden_states = torch.zeros(1, actor_critic.recurrent_hidden_state_size).to(device)
+masks = torch.zeros(1, 1).to(device)
 
 obs = env.reset()
 
