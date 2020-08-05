@@ -118,7 +118,7 @@ def make_env(env_id, seed, rank, log_dir, allow_early_resets, pixels=False):
 
         # If the input has shape (W,H,3), wrap for PyTorch convolutions
         obs_shape = env.observation_space.shape
-        if len(obs_shape) == 3 and obs_shape[2] in [1, 3, 4]:
+        if len(obs_shape) == 3 and obs_shape[2] in [1, 3, 4, 5]:
             env = TransposeImage(env, op=[2, 0, 1])
 
         return env

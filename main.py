@@ -3,6 +3,7 @@ import glob
 import os
 import time
 from collections import deque
+import json
 
 import gym
 import numpy as np
@@ -101,6 +102,8 @@ def main():
     episode_rewards = deque(maxlen=10)
     all_rewards = []
 
+    all_final_states = []
+
     start = time.time()
     num_updates = int(args.num_env_steps) // args.num_steps // args.num_processes
     print("Total number of updates:", num_updates)
@@ -122,9 +125,20 @@ def main():
             # Obser reward and next obs
             obs, reward, done, infos = envs.step(action)
 
+            final_states = {"success": 0, "wrong_way": 0, "sw_crash": 0, "car_crash": 0, "out_of_time": 0,
+                            "final_position": []}
             for info in infos:
                 if 'episode' in info.keys():
                     episode_rewards.append(info['episode']['r'])
+                if len(info.keys()) > 1:
+                    for key in info.keys():
+                        if 'episode' not in key:
+                            if "final_position" in key:
+                                final_states[key].append(info[key])
+                            else:
+                                final_states[key] += 1
+            if done[0]:
+                all_final_states.append(final_states)
 
             # If done then clean the history of observations.
             masks = torch.FloatTensor([[0.0] if done_ else [1.0] for done_ in done])
@@ -186,6 +200,10 @@ def main():
 
             np.save(os.path.join(save_path, args.env_name + '_' + args.config + '_s' + str(args.seed) + '.npy'),
                     all_rewards)
+
+            with open(os.path.join(save_path, args.env_name + '_' + args.config + '_s' +
+                                              str(args.seed) + '_final_states.json'), 'w') as fp:
+                json.dump(all_final_states, fp)
 
         if args.eval_interval is not None and len(episode_rewards) > 1 and j % args.eval_interval == 0:
             ob_rms = utils.get_vec_normalize(envs).ob_rms
