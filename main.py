@@ -47,7 +47,8 @@ def main():
                          device, False, pixels=args.pixels)
 
     actor_critic = Policy(envs.observation_space.shape, envs.action_space,
-                          base_kwargs={'recurrent': args.recurrent_policy}, base_mlp=args.base_mlp)
+                          base_kwargs={'recurrent': args.recurrent_policy, 'predict_intention': args.predict_intention},
+                          base_mlp=args.base_mlp)
     actor_critic.to(device)
 
     if args.algo == 'a2c':

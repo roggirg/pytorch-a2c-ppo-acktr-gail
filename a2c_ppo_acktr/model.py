@@ -358,7 +358,7 @@ class SpecialMLP(NNBase):
     '''
     MLP class specialized for car environment with opponents.
     '''
-    def __init__(self, num_inputs, recurrent=False, hidden_size=64, predict_intention=True):
+    def __init__(self, num_inputs, recurrent=False, hidden_size=64, predict_intention=False):
         super(SpecialMLP, self).__init__(recurrent, num_inputs, hidden_size)
 
         self.predict_intention = predict_intention

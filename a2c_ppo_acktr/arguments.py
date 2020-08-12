@@ -164,6 +164,11 @@ def get_args():
         default='simple',
         choices=['simple', 'deep', 'special'],
         help='Run experiments from Pixels')
+    parser.add_argument(
+        '--predict-intention',
+        action='store_true',
+        default=False,
+        help='Predict Intentions in special MLP')
     args = parser.parse_args()
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
