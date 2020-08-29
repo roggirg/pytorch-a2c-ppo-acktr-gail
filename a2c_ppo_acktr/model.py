@@ -7,6 +7,8 @@ from a2c_ppo_acktr.distributions import Bernoulli, Categorical, DiagGaussian
 from a2c_ppo_acktr.utils import init
 
 
+import json
+
 class Flatten(nn.Module):
     def forward(self, x):
         return x.view(x.size(0), -1)
@@ -366,50 +368,50 @@ class SpecialMLP(NNBase):
         if recurrent:
             num_inputs = hidden_size
 
-        agent_dim = 5  # pos(2), vel(2), heading(1)
-        env_dim = 8  # four corners of the environment(4), light status(4)
-        opponent_dim = 5  # pos(2), vel(2), heading(1)
-        intention_dim = 4  # one-hot vector for four possible intentions(4)
-        self.num_opponents = int((num_inputs - agent_dim - env_dim) / (opponent_dim+intention_dim+1))
-        act_crit_dim = 2*self.num_opponents*hidden_size//8 + 2*hidden_size
+        self.agent_dim = 5  # pos(2), vel(2), heading(1)
+        self.env_dim = 8  # four corners of the environment(4), light status(4)
+        self.opponent_dim = 5  # pos(2), vel(2), heading(1)
+        self.intention_dim = 4  # one-hot vector for four possible intentions(4)
+        self.num_opponents = int((num_inputs-self.agent_dim-self.env_dim) / (self.opponent_dim+self.intention_dim+1))
+        # act_crit_dim = self.num_opponents*hidden_size//4 + 2*hidden_size
+        act_crit_dim = self.num_opponents*(hidden_size//8 + self.intention_dim) + 2*hidden_size
 
-        init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
-                               constant_(x, 0), np.sqrt(2))
+        init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.constant_(x, 0), np.sqrt(2))
 
         self.agent_model = nn.Sequential(
-            init_(nn.Linear(agent_dim, hidden_size)), nn.ReLU(),
-            init_(nn.Linear(hidden_size, hidden_size)), nn.ReLU()
+            init_(nn.Linear(self.agent_dim, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh()
         )
 
         self.env_model = nn.Sequential(
-            init_(nn.Linear(env_dim, hidden_size)), nn.ReLU(),
-            init_(nn.Linear(hidden_size, hidden_size)), nn.ReLU())
+            init_(nn.Linear(self.env_dim, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh())
 
         if self.num_opponents > 0:
             self.opponent_model = nn.Sequential(
-                init_(nn.Linear(opponent_dim, hidden_size)), nn.ReLU(),
-                init_(nn.Linear(hidden_size, hidden_size//8)), nn.ReLU()
-            )
-
-            self.intention_mlp = nn.Sequential(
-                init_(nn.Linear(intention_dim, hidden_size)), nn.Tanh(),
+                init_(nn.Linear(self.opponent_dim, hidden_size)), nn.Tanh(),
                 init_(nn.Linear(hidden_size, hidden_size//8)), nn.Tanh()
             )
+
+            # self.intention_model = nn.Sequential(
+            #     init_(nn.Linear(self.intention_dim, hidden_size)), nn.Tanh(),
+            #     init_(nn.Linear(hidden_size, hidden_size//8)), nn.Tanh()
+            # )
 
             if self.predict_intention:
                 # A model that predicts intention based on opponent state
                 self.intention_prediction = nn.Sequential(
-                    init_(nn.Linear(agent_dim+opponent_dim, hidden_size)), nn.ReLU(),
+                    init_(nn.Linear(self.agent_dim+self.opponent_dim, hidden_size)), nn.Tanh(),
                     init_(nn.Linear(hidden_size, 4)), nn.Softmax()
                 )
 
         self.actor = nn.Sequential(
-            init_(nn.Linear(act_crit_dim, hidden_size)), nn.ReLU(),
-            init_(nn.Linear(hidden_size, hidden_size)), nn.ReLU())
+            init_(nn.Linear(act_crit_dim, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh())
 
         self.critic = nn.Sequential(
-            init_(nn.Linear(act_crit_dim, hidden_size)), nn.ReLU(),
-            init_(nn.Linear(hidden_size, hidden_size)), nn.ReLU())
+            init_(nn.Linear(act_crit_dim, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh())
 
         self.critic_linear = init_(nn.Linear(hidden_size, 1))
 
@@ -417,20 +419,17 @@ class SpecialMLP(NNBase):
 
     def forward(self, inputs, rnn_hxs, masks):
         x = inputs
+        batch_size = inputs.size(0)
         agent_state = self.agent_model(x[:, 0:5])
         env_state = self.env_model(x[:, 5:13])
 
         if self.num_opponents > 0:
-            opponent_state = torch.tensor([]).to(device="cuda")
-            for i in range(self.num_opponents):
-                opp_state = self.opponent_model(x[:, 13+10*i:13+10*i+5]) * x[:, 13+10*i+9].unsqueeze(1)
-                if self.predict_intention:
-                    pred_intention = self.intention_prediction(torch.cat([x[:, 13 + 10 * i:13 + 10 * i + 5], x[:, 0:5]], dim=-1))
-                    opp_intent = self.intention_mlp(pred_intention) * x[:, 13+10*i+9].unsqueeze(1)
-                else:
-                    opp_intent = self.intention_mlp(x[:, 13+10*i+5:13+10*i+9]) * x[:, 13+10*i+9].unsqueeze(1)
-                opponent_state = torch.cat((opponent_state, torch.cat((opp_state, opp_intent), dim=-1)), dim=-1)
-
+            opponent_state = x[:, self.agent_dim+self.env_dim:].reshape((-1, self.opponent_dim+self.intention_dim+1))
+            opponent_enc = self.opponent_model(opponent_state[:, :self.opponent_dim]) * opponent_state[:, -1].unsqueeze(1)
+            # intention_enc = self.intention_model(opponent_state[:, self.opponent_dim:self.opponent_dim+self.intention_dim]) \
+            #                  * opponent_state[:, -1].unsqueeze(1)  # multiplying by active/inactive
+            intention_enc = opponent_state[:, self.opponent_dim:self.opponent_dim + self.intention_dim]
+            opponent_state = torch.cat((opponent_enc, intention_enc), dim=-1).view((batch_size, -1))
             x = torch.cat((agent_state, env_state, opponent_state), dim=-1)
         else:
             x = torch.cat((agent_state, env_state), dim=-1)
