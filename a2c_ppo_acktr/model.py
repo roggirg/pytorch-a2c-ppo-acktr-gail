@@ -360,7 +360,7 @@ class SpecialMLP(NNBase):
     '''
     MLP class specialized for car environment with opponents.
     '''
-    def __init__(self, num_inputs, recurrent=False, hidden_size=64, predict_intention=False):
+    def __init__(self, num_inputs, recurrent=False, hidden_size=32, predict_intention=False):
         super(SpecialMLP, self).__init__(recurrent, num_inputs, hidden_size)
 
         self.predict_intention = predict_intention
@@ -368,13 +368,14 @@ class SpecialMLP(NNBase):
         if recurrent:
             num_inputs = hidden_size
 
+        self.hidden_size = hidden_size
         self.agent_dim = 5  # pos(2), vel(2), heading(1)
         self.env_dim = 8  # four corners of the environment(4), light status(4)
         self.opponent_dim = 5  # pos(2), vel(2), heading(1)
         self.intention_dim = 4  # one-hot vector for four possible intentions(4)
         self.num_opponents = int((num_inputs-self.agent_dim-self.env_dim) / (self.opponent_dim+self.intention_dim+1))
-        # act_crit_dim = self.num_opponents*hidden_size//4 + 2*hidden_size
-        act_crit_dim = self.num_opponents*(hidden_size//8 + self.intention_dim) + 2*hidden_size
+        # act_crit_dim = self.num_opponents*(hidden_size + self.intention_dim) + 2*hidden_size
+        act_crit_dim = 3*hidden_size
 
         init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.constant_(x, 0), np.sqrt(2))
 
@@ -390,13 +391,13 @@ class SpecialMLP(NNBase):
         if self.num_opponents > 0:
             self.opponent_model = nn.Sequential(
                 init_(nn.Linear(self.opponent_dim, hidden_size)), nn.Tanh(),
-                init_(nn.Linear(hidden_size, hidden_size//8)), nn.Tanh()
+                init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh()
             )
 
-            # self.intention_model = nn.Sequential(
-            #     init_(nn.Linear(self.intention_dim, hidden_size)), nn.Tanh(),
-            #     init_(nn.Linear(hidden_size, hidden_size//8)), nn.Tanh()
-            # )
+            self.attention_model = nn.Sequential(
+                init_(nn.Linear(3*hidden_size + self.intention_dim, hidden_size)), nn.Tanh(),
+                init_(nn.Linear(hidden_size, 1))
+            )
 
             if self.predict_intention:
                 # A model that predicts intention based on opponent state
@@ -424,13 +425,19 @@ class SpecialMLP(NNBase):
         env_state = self.env_model(x[:, 5:13])
 
         if self.num_opponents > 0:
+            # encoding opponent state
             opponent_state = x[:, self.agent_dim+self.env_dim:].reshape((-1, self.opponent_dim+self.intention_dim+1))
-            opponent_enc = self.opponent_model(opponent_state[:, :self.opponent_dim]) * opponent_state[:, -1].unsqueeze(1)
-            # intention_enc = self.intention_model(opponent_state[:, self.opponent_dim:self.opponent_dim+self.intention_dim]) \
-            #                  * opponent_state[:, -1].unsqueeze(1)  # multiplying by active/inactive
-            intention_enc = opponent_state[:, self.opponent_dim:self.opponent_dim + self.intention_dim]
-            opponent_state = torch.cat((opponent_enc, intention_enc), dim=-1).view((batch_size, -1))
-            x = torch.cat((agent_state, env_state, opponent_state), dim=-1)
+            opponentdyn_enc = self.opponent_model(opponent_state[:, :self.opponent_dim]) * opponent_state[:, -1].unsqueeze(1)
+            intention = opponent_state[:, self.opponent_dim:self.opponent_dim + self.intention_dim]
+            opponent_state = torch.cat((opponentdyn_enc, intention), dim=-1).view((batch_size, self.num_opponents, -1))
+
+            # Computing attention
+            expanded_agentenv_state = torch.cat((agent_state, env_state), dim=-1).repeat(1, self.num_opponents).view(batch_size, self.num_opponents, -1)
+            agentenvopp_states = torch.cat((expanded_agentenv_state, opponent_state), dim=-1).reshape(-1, 3*self.hidden_size + self.intention_dim)
+            attention_weights = F.softmax(self.attention_model(agentenvopp_states).view(batch_size, -1)).unsqueeze(2)
+            attended_opponentdyn_enc = (opponentdyn_enc.view((batch_size, self.num_opponents, -1)) * attention_weights).sum(1)
+
+            x = torch.cat((agent_state, env_state, attended_opponentdyn_enc), dim=-1)
         else:
             x = torch.cat((agent_state, env_state), dim=-1)
 
