@@ -127,7 +127,7 @@ def main():
             obs, reward, done, infos = envs.step(action)
 
             final_states = {"success": 0, "wrong_way": 0, "sw_crash": 0, "car_crash": 0, "out_of_time": 0,
-                            "final_position": []}
+                            "burned_light": 0, "final_position": []}
             for info in infos:
                 if 'episode' in info.keys():
                     episode_rewards.append(info['episode']['r'])
