@@ -42,8 +42,8 @@ args = parser.parse_args()
 
 args.det = not args.non_det
 args.cuda = torch.cuda.is_available()
-if args.cuda:
-    device = torch.device("cuda:0" if args.cuda else "cpu")
+# if args.cuda:
+device = torch.device("cuda:0" if args.cuda else "cpu")
 
 env = make_vec_envs(args.env_name, 1000, 1, None, None, device=device, allow_early_resets=False, pixels=False)
 
