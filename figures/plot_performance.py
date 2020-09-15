@@ -4,17 +4,18 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from collections import Counter
 
-configs = ['kp50_special', 'kp100_special', 'kp150_special', 'kp200_special', 'kp250_special', 'kp300_special']
+# configs = ['kp50_special', 'kp100_special', 'kp150_special', 'kp200_special', 'kp250_special', 'kp300_special']
 # configs = ['kp50_special', 'kp100_special', 'kp200_special', 'kp300_special']
+configs = ['kp200_special', 'kp200_diffStopProb_special']
 # configs = ['kp50_special']
 
 use_tl = 'TL-'
-special_flag = ''  # '_velDepStopping'
-global_config = "tenOpps_intention_kpXX_" + special_flag + use_tl
+special_flag = ''
+global_config = "tenOpps_intention_kp200_" + special_flag + use_tl
 
 labels = {}
-labels["NoIntent"] = "CarEnv-TenOpponent-States-SpeedControl-"+use_tl+"v0_"
-# labels['Intent'] = "CarEnv-TenOpponentWithIntention-States-SpeedControl-"+use_tl+"v0_"
+# labels["NoIntent"] = "CarEnv-TenOpponent-States-SpeedControl-"+use_tl+"v0_"
+labels['Intent'] = "CarEnv-TenOpponentWithIntention-States-SpeedControl-"+use_tl+"v0_"
 
 all_mean_values = {}
 all_std_values = {}
@@ -67,7 +68,7 @@ for row in range(nrows):
 
 plt.subplots_adjust(top=0.9, bottom=0.1, hspace=0.2, wspace=0.1)
 plt.tight_layout()
-plt.savefig(global_config+"_final_states_"+use_tl+".png")
+plt.savefig(global_config+"_final_states.png")
 
 
 ######################################## final state locations #####################################
@@ -117,4 +118,4 @@ for key, val in colors.items():
     all_patches.append(mpatches.Patch(color=val, label=key))
 plt.legend(handles=all_patches, prop={'size': 10}, bbox_to_anchor=(0.75, 1))
 plt.tight_layout()
-plt.savefig(global_config+"_final_locs_"+use_tl+".png")
+plt.savefig(global_config+"_final_locs.png")

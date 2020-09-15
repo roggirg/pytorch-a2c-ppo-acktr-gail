@@ -8,7 +8,12 @@ import os
 
 
 label = "noIntention"
-traj_index = 55
+traj_index = 78
+image_folder = "trajectory_dataset/attn_figs"
+
+filelist = glob.glob(os.path.join(image_folder, "*.png"))
+for f in filelist:
+    os.remove(f)
 
 
 def intention_to_color(intentions):
@@ -94,11 +99,10 @@ for i in range(len(trajectories[traj_index])):
     plt.scatter(agent_position[0], agent_position[1], color='y')
     plt.axis(xmin=-0.1, xmax=1.1, ymin=0, ymax=1)
     ax.set_facecolor('gray')
-    plt.title(label + "Model - Timestep " + str(i))
+    plt.title(label + " Model - Timestep " + str(i))
     plt.savefig("trajectory_dataset/attn_figs/step_"+f"{i:05d}.png")
 
 
-image_folder = 'trajectory_dataset/attn_figs'
 video_name = 'trajectory_dataset/attn_trajectory_'+label+'Model_traj'+str(traj_index)+'.mp4'
 
 images = sorted([img for img in os.listdir(image_folder) if img.endswith(".png")])
