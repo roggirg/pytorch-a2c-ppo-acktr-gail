@@ -429,12 +429,15 @@ class SpecialMLP(NNBase):
             opponent_state = x[:, self.agent_dim+self.env_dim:].reshape((-1, self.opponent_dim+self.intention_dim+1))
             opponentdyn_enc = self.opponent_model(opponent_state[:, :self.opponent_dim]) * opponent_state[:, -1].unsqueeze(1)
             intention = opponent_state[:, self.opponent_dim:self.opponent_dim + self.intention_dim]
+            active_opp = opponent_state[:, -1].unsqueeze(1)
             opponent_state = torch.cat((opponentdyn_enc, intention), dim=-1).view((batch_size, self.num_opponents, -1))
 
             # Computing attention
             expanded_agentenv_state = torch.cat((agent_state, env_state), dim=-1).repeat(1, self.num_opponents).view(batch_size, self.num_opponents, -1)
             agentenvopp_states = torch.cat((expanded_agentenv_state, opponent_state), dim=-1).reshape(-1, 3*self.hidden_size + self.intention_dim)
-            attention_weights = F.softmax(self.attention_model(agentenvopp_states).view(batch_size, -1)).unsqueeze(2)
+            attention_weights = F.softmax(
+                (self.attention_model(agentenvopp_states) * active_opp).view(batch_size, -1)
+            ).unsqueeze(2)
             attended_opponentdyn_enc = (opponentdyn_enc.view((batch_size, self.num_opponents, -1)) * attention_weights).sum(1)
 
             x = torch.cat((agent_state, env_state, attended_opponentdyn_enc), dim=-1)
