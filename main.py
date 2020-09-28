@@ -26,6 +26,8 @@ def main():
     args = get_args()
 
     args.config += args.base_mlp
+    if args.recurrent_policy:
+        args.config += "_recurrent"
     print("CONFIG:", args.config)
 
     torch.manual_seed(args.seed)
@@ -110,9 +112,8 @@ def main():
 
         if args.use_linear_lr_decay:
             # decrease learning rate linearly
-            utils.update_linear_schedule(
-                agent.optimizer, j, num_updates,
-                agent.optimizer.lr if args.algo == "acktr" else args.lr)
+            utils.update_linear_schedule(agent.optimizer, j, num_updates,
+                                         agent.optimizer.lr if args.algo == "acktr" else args.lr)
 
         for step in range(args.num_steps):
             # Sample actions
@@ -131,6 +132,9 @@ def main():
             # If done then clean the history of observations.
             masks = torch.FloatTensor([[0.0] if done_ else [1.0] for done_ in done])
             bad_masks = torch.FloatTensor([[0.0] if 'bad_transition' in info.keys() else [1.0] for info in infos])
+            for info in infos:
+                if 'bad_transition' in info.keys():
+                    print("Bad Transition Encountered...")
             rollouts.insert(obs, recurrent_hidden_states, action, action_log_prob, value, reward, masks, bad_masks)
 
         with torch.no_grad():

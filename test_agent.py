@@ -1,9 +1,7 @@
 import argparse
-import cv2
+from collections import Counter
 import os
-# workaround to unpickle olf model files
 import sys
-import pickle
 
 import numpy as np
 import torch
@@ -110,6 +108,7 @@ while True:
     # masks.fill_(0.0 if done else 1.0)
     masks = torch.FloatTensor([[0.0] if done_ else [1.0] for done_ in done])
 
+print("Seed:", args.seed, "Result:", Counter(final_states[:100]))
 fname = os.path.join("figures/test_results", args.env_name+'_'+args.config+'_'+args.save_flag+'s'+str(args.seed)+'_final_states.npy')
 np.save(fname, final_states)
 fname = os.path.join("figures/test_results", args.env_name+'_'+args.config+'_'+args.save_flag+'s'+str(args.seed)+'_final_positions.npy')
