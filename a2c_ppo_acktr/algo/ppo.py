@@ -33,8 +33,7 @@ class PPO():
 
     def update(self, rollouts):
         advantages = rollouts.returns[:-1] - rollouts.value_preds[:-1]
-        advantages = (advantages - advantages.mean()) / (
-            advantages.std() + 1e-5)
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-5)
 
         value_loss_epoch = 0
         action_loss_epoch = 0

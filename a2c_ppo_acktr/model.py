@@ -92,14 +92,21 @@ class NNBase(nn.Module):
         super(NNBase, self).__init__()
 
         self._recurrent = recurrent
+        self.model_type = model_type
         self._output_size = hidden_size
-        if 'special' in model_type:
-            self._recurrent_hidden_state_size = recurrent_input_size
-        else:
-            self._recurrent_hidden_state_size = hidden_size
+        self.hidden_size = hidden_size
+        self.recurrent_input_size = recurrent_input_size
 
         if recurrent:
-            self.gru = nn.GRU(recurrent_input_size, self._recurrent_hidden_state_size)
+            if 'special' in model_type or 'attn' in model_type:
+                self._recurrent_hidden_state_size = recurrent_input_size
+            else:
+                self._recurrent_hidden_state_size = hidden_size
+
+            if 'attn' in model_type:
+                self.gru = nn.GRU(3*hidden_size, hidden_size)
+            else:
+                self.gru = nn.GRU(recurrent_input_size, self._recurrent_hidden_state_size)
             for name, param in self.gru.named_parameters():
                 if 'bias' in name:
                     nn.init.constant_(param, 0)
@@ -121,17 +128,30 @@ class NNBase(nn.Module):
         return self._output_size
 
     def _forward_gru(self, x, hxs, masks):
+        if 'attn' in self.model_type and hxs.size(0) != 4:
+            hxs = (hxs * masks).view((-1, self.hidden_size))
         if x.size(0) == hxs.size(0):
-            x, hxs = self.gru(x.unsqueeze(0), (hxs * masks).unsqueeze(0))
+            if 'attn' not in self.model_type:
+                hxs = (hxs * masks).unsqueeze(0)
+            else:
+                hxs = hxs.unsqueeze(0)
+            x = x.unsqueeze(0)
+            x, hxs = self.gru(x, hxs)
             x = x.squeeze(0)
             hxs = hxs.squeeze(0)
+            if 'attn' in self.model_type:
+                hxs = hxs.view((-1, self.recurrent_hidden_state_size))
         else:
             # x is a (T, N, -1) tensor that has been flatten to (T * N, -1)
             N = hxs.size(0)
             T = int(x.size(0) / N)
-
-            # unflatten
-            x = x.view(T, N, x.size(1))
+            if 'attn' in self.model_type:
+                num_opps = hxs.size(1) // self.hidden_size
+                T = T // num_opps
+                x = x.view(T, N*num_opps, -1)
+            else:
+                # unflatten
+                x = x.view(T, N, x.size(1))
 
             # Same deal with masks
             masks = masks.view(T, N)
@@ -158,7 +178,14 @@ class NNBase(nn.Module):
                 start_idx = has_zeros[i]
                 end_idx = has_zeros[i + 1]
 
-                rnn_scores, hxs = self.gru(x[start_idx:end_idx], hxs * masks[start_idx].view(1, -1, 1))
+                if 'attn' in self.model_type:
+                    if hxs.size(1) != N:
+                        hxs = hxs.view(1, N, -1)
+                    hxs = (hxs * masks[start_idx].view(1, -1, 1)).view((1, -1, self.hidden_size))
+                else:
+                    hxs = hxs * masks[start_idx].view(1, -1, 1)
+
+                rnn_scores, hxs = self.gru(x[start_idx:end_idx], hxs)
 
                 outputs.append(rnn_scores)
 
@@ -166,8 +193,12 @@ class NNBase(nn.Module):
             # x is a (T, N, -1) tensor
             x = torch.cat(outputs, dim=0)
             # flatten
-            x = x.view(T * N, -1)
             hxs = hxs.squeeze(0)
+            if 'attn' in self.model_type:
+                hxs = hxs.view((-1, self.recurrent_hidden_state_size))
+                x = x.view(T * x.size(1), -1)
+            else:
+                x = x.view(T * N, -1)
 
         return x, hxs
 
@@ -359,21 +390,15 @@ class AttnMLP(NNBase):
     MLP class specialized for car environment with opponents.
     '''
     def __init__(self, num_inputs, recurrent=False, hidden_size=32, predict_intention=False):
-        super(AttnMLP, self).__init__(recurrent, num_inputs, hidden_size)
-
         self.predict_intention = predict_intention
-        recurrent = False
-        if recurrent:
-            num_inputs = hidden_size
-
         self.hidden_size = hidden_size
         self.agent_dim = 5  # pos(2), vel(2), heading(1)
         self.env_dim = 8  # four corners of the environment(4), light status(4)
         self.opponent_dim = 5  # pos(2), vel(2), heading(1)
         self.intention_dim = 4  # one-hot vector for four possible intentions(4)
         self.num_opponents = int((num_inputs-self.agent_dim-self.env_dim) / (self.opponent_dim+self.intention_dim+1))
-        # act_crit_dim = self.num_opponents*(hidden_size + self.intention_dim) + 2*hidden_size
         act_crit_dim = 3*hidden_size
+        super(AttnMLP, self).__init__(recurrent, hidden_size*self.num_opponents, hidden_size, model_type='attn')
 
         init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.constant_(x, 0), np.sqrt(2))
 
@@ -393,7 +418,7 @@ class AttnMLP(NNBase):
             )
 
             self.attention_model = nn.Sequential(
-                init_(nn.Linear(3*hidden_size + self.intention_dim, hidden_size)), nn.Tanh(),
+                init_(nn.Linear(hidden_size+self.intention_dim, hidden_size)), nn.Tanh(),
                 init_(nn.Linear(hidden_size, 1))
             )
 
@@ -421,20 +446,22 @@ class AttnMLP(NNBase):
         batch_size = inputs.size(0)
         agent_state = self.agent_model(x[:, 0:5])
         env_state = self.env_model(x[:, 5:13])
+        expanded_agentenv_state = torch.cat((agent_state, env_state), dim=-1).repeat(1, self.num_opponents).view(batch_size*self.num_opponents, -1)
 
         if self.num_opponents > 0:
             # encoding opponent state
             opponent_state = x[:, self.agent_dim+self.env_dim:].reshape((-1, self.opponent_dim+self.intention_dim+1))
-            opponentdyn_enc = self.opponent_model(opponent_state[:, :self.opponent_dim]) * opponent_state[:, -1].unsqueeze(1)
             intention = opponent_state[:, self.opponent_dim:self.opponent_dim + self.intention_dim]
             active_opp = opponent_state[:, -1].unsqueeze(1)
-            opponent_state = torch.cat((opponentdyn_enc, intention), dim=-1).view((batch_size, self.num_opponents, -1))
+            opponentdyn_enc = self.opponent_model(opponent_state[:, :self.opponent_dim])
+            if self.is_recurrent:
+                opponentdyn_enc, rnn_hxs = self._forward_gru(
+                    torch.cat((expanded_agentenv_state, opponentdyn_enc), dim=-1) * active_opp, rnn_hxs, masks
+                )
 
             # Computing attention
-            expanded_agentenv_state = torch.cat((agent_state, env_state), dim=-1).repeat(1, self.num_opponents).view(batch_size, self.num_opponents, -1)
-            agentenvopp_states = torch.cat((expanded_agentenv_state, opponent_state), dim=-1).reshape(-1, 3*self.hidden_size + self.intention_dim)
             attention_weights = F.softmax(
-                (self.attention_model(agentenvopp_states) * active_opp).view(batch_size, -1)
+                (self.attention_model(torch.cat((opponentdyn_enc, intention), dim=-1))*active_opp).view(batch_size, -1)
             ).unsqueeze(2)
             attended_opponentdyn_enc = (opponentdyn_enc.view((batch_size, self.num_opponents, -1)) * attention_weights).sum(1)
 
@@ -535,3 +562,81 @@ class SpecialMLP(NNBase):
         hidden_actor = self.actor(x)
 
         return self.critic_linear(hidden_critic), hidden_actor, rnn_hxs
+
+
+# class SpecialMLP(NNBase):
+#     '''
+#     MLP class specialized for car environment with opponents.
+#     '''
+#     def __init__(self, num_inputs, recurrent=False, hidden_size=32, predict_intention=False):
+#         self.predict_intention = predict_intention
+#         self.hidden_size = hidden_size
+#         self.agent_dim = 5  # pos(2), vel(2), heading(1)
+#         self.env_dim = 8  # four corners of the environment(4), light status(4)
+#         self.opponent_dim = 5  # pos(2), vel(2), heading(1)
+#         self.intention_dim = 4  # one-hot vector for four possible intentions(4)
+#         self.num_opponents = int((num_inputs - self.agent_dim - self.env_dim) / (self.opponent_dim + self.intention_dim + 1))
+#         act_crit_dim = self.agent_dim+self.env_dim+self.opponent_dim+self.intention_dim
+#         super(SpecialMLP, self).__init__(recurrent, act_crit_dim, hidden_size, model_type='special')
+#
+#         init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.constant_(x, 0), np.sqrt(2))
+#
+#         if self.num_opponents > 0:
+#             self.opponent_model = nn.Sequential(
+#                 init_(nn.Linear(self.opponent_dim, hidden_size)), nn.Tanh(),
+#                 init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh()
+#             )
+#
+#             self.attention_model = nn.Sequential(
+#                 init_(nn.Linear(self.agent_dim+self.env_dim+self.opponent_dim+self.intention_dim, hidden_size)),
+#                 nn.Tanh(),
+#                 init_(nn.Linear(hidden_size, 1))
+#             )
+#
+#             if self.predict_intention:
+#                 # A model that predicts intention based on opponent state
+#                 self.intention_prediction = nn.Sequential(
+#                     init_(nn.Linear(self.agent_dim+self.opponent_dim, hidden_size)), nn.Tanh(),
+#                     init_(nn.Linear(hidden_size, 4)), nn.Softmax()
+#                 )
+#
+#         self.actor = nn.Sequential(
+#             init_(nn.Linear(act_crit_dim, hidden_size)), nn.Tanh(),
+#             init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh())
+#
+#         self.critic = nn.Sequential(
+#             init_(nn.Linear(act_crit_dim, hidden_size)), nn.Tanh(),
+#             init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh())
+#
+#         self.critic_linear = init_(nn.Linear(hidden_size, 1))
+#
+#         self.train()
+#
+#     def forward(self, inputs, rnn_hxs, masks):
+#         x = inputs
+#         batch_size = inputs.size(0)
+#         agentenv_state = x[:, :13]
+#
+#         if self.num_opponents > 0:
+#             # encoding opponent state
+#             opponent_state = x[:, self.agent_dim+self.env_dim:].reshape((batch_size, self.num_opponents, self.opponent_dim+self.intention_dim+1))
+#             opponent_dyn_intention = opponent_state[:, :, :self.opponent_dim + self.intention_dim]
+#             opponent_active = opponent_state[:, :, -1].flatten().unsqueeze(1)
+#
+#             # Computing attention
+#             expanded_agentenv_state = agentenv_state.repeat(1, self.num_opponents).view(batch_size, self.num_opponents, -1)
+#             agentenvopp_states = torch.cat((expanded_agentenv_state, opponent_dyn_intention), dim=-1).reshape(-1, self.agent_dim+self.env_dim+self.opponent_dim+self.intention_dim)
+#             attention_weights = F.softmax((self.attention_model(agentenvopp_states) * opponent_active).view(batch_size, -1)).unsqueeze(2)
+#             attended_opponentdyn_enc = (opponent_dyn_intention.view((batch_size, self.num_opponents, -1)) * attention_weights).sum(1)
+#
+#             x = torch.cat((agentenv_state, attended_opponentdyn_enc), dim=-1)
+#         else:
+#             x = agentenv_state
+#
+#         if self.is_recurrent:
+#             x, rnn_hxs = self._forward_gru(x, rnn_hxs, masks)
+#
+#         hidden_critic = self.critic(x)
+#         hidden_actor = self.actor(x)
+#
+#         return self.critic_linear(hidden_critic), hidden_actor, rnn_hxs

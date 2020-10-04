@@ -25,6 +25,8 @@ from evaluation import evaluate
 def main():
     args = get_args()
 
+    traindir_name = "LR{0}NSteps{1}".format(args.lr, args.num_steps)
+
     args.config += args.base_mlp
     if args.recurrent_policy:
         args.config += "_recurrent"
@@ -108,6 +110,12 @@ def main():
     start = time.time()
     num_updates = int(args.num_env_steps) // args.num_steps // args.num_processes
     print("Total number of updates:", num_updates)
+
+    final_states = {"success": 0, "sw_crash": 0, "car_crash": 0, "out_of_time": 0, "burned_light": 0}
+    episode_count = 0
+    final_states_data = []
+    best_success = 0
+
     for j in range(num_updates):
 
         if args.use_linear_lr_decay:
@@ -128,6 +136,17 @@ def main():
             for info in infos:
                 if 'episode' in info.keys():
                     episode_rewards.append(info['episode']['r'])
+                if len(info.keys()) > 1:
+                    for key in info.keys():
+                        if 'final_pos' in key or 'episode' in key:
+                            continue
+                        final_states[key] += 1
+                        episode_count += 1
+                        if episode_count == 100:
+                            final_states_data.append(final_states)
+                            episode_count = 0
+                            final_states = {"success": 0, "sw_crash": 0, "car_crash": 0, "out_of_time": 0,
+                                            "burned_light": 0}
 
             # If done then clean the history of observations.
             masks = torch.FloatTensor([[0.0] if done_ else [1.0] for done_ in done])
@@ -181,17 +200,26 @@ def main():
 
         # save for every interval-th episode or for the last epoch
         if (j % args.save_interval == 0 or j == num_updates - 1) and args.save_dir != "":
-            save_path = os.path.join(args.save_dir, args.algo)
+            save_path = os.path.join(args.save_dir, args.algo, traindir_name)
             try:
                 os.makedirs(save_path)
             except OSError:
                 pass
 
+            if len(final_states_data) > 0and final_states_data[-1]['success'] > best_success:
+                best_success = final_states_data[-1]['success']
+                torch.save([actor_critic, getattr(utils.get_vec_normalize(envs), 'ob_rms', None)],
+                           os.path.join(save_path, args.env_name + '_' + args.config + '_s'+str(args.seed)+
+                                        "_best"+str(len(final_states_data))+".pt"))
+
             torch.save([actor_critic, getattr(utils.get_vec_normalize(envs), 'ob_rms', None)],
-                       os.path.join(save_path, args.env_name + '_' + args.config + '_s'+str(args.seed)+".pt"))
+                       os.path.join(save_path, args.env_name + '_' + args.config + '_s' + str(args.seed) + ".pt"))
 
             np.save(os.path.join(save_path, args.env_name + '_' + args.config + '_s' + str(args.seed) + '.npy'),
                     all_rewards)
+
+            fname = os.path.join(save_path, args.env_name + '_' + args.config + '_s' + str(args.seed) + '_final_states.npy')
+            np.save(fname, final_states_data)
 
         if args.eval_interval is not None and len(episode_rewards) > 1 and j % args.eval_interval == 0:
             ob_rms = utils.get_vec_normalize(envs).ob_rms

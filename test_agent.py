@@ -44,19 +44,23 @@ parser.add_argument(
     help='special string for saving file to see how different env configs affects the trained agents.')
 args = parser.parse_args()
 
+
 args.det = not args.non_det
 args.cuda = torch.cuda.is_available()
-# if args.cuda:
 device = torch.device("cuda:0" if args.cuda else "cpu")
 
+eval_seed = 1000
+torch.manual_seed(eval_seed)
+torch.cuda.manual_seed_all(eval_seed)
+
 num_processes = 10
-env = make_vec_envs(args.env_name, 1000, num_processes, None, None, device=device, allow_early_resets=False, pixels=False)
+env = make_vec_envs(args.env_name, eval_seed, num_processes, None, None, device=device, allow_early_resets=False, pixels=False)
 
 # Get a render function
 render_func = get_render_func(env)
 
 # We need to use the same statistics for normalization as used in training
-actor_critic, ob_rms = torch.load(os.path.join(args.load_dir, args.env_name + '_'+args.config+'_s'+str(args.seed) + ".pt"),
+actor_critic, ob_rms = torch.load(os.path.join(args.load_dir, args.env_name+'_'+args.config+'_s'+str(args.seed)+".pt"),
                                   map_location=lambda storage, loc: storage)
 actor_critic.to(device)
 
@@ -66,7 +70,7 @@ if vec_norm is not None:
     vec_norm.ob_rms = ob_rms
 
 recurrent_hidden_states = torch.zeros(num_processes, actor_critic.recurrent_hidden_state_size).to(device)
-masks = torch.zeros(num_processes)
+masks = torch.zeros(num_processes, 1).to(device)
 
 obs = env.reset()
 
@@ -106,7 +110,7 @@ while True:
         break
 
     # masks.fill_(0.0 if done else 1.0)
-    masks = torch.FloatTensor([[0.0] if done_ else [1.0] for done_ in done])
+    masks = torch.FloatTensor([[0.0] if done_ else [1.0] for done_ in done]).to(device)
 
 print("Seed:", args.seed, "Result:", Counter(final_states[:100]))
 fname = os.path.join("figures/test_results", args.env_name+'_'+args.config+'_'+args.save_flag+'s'+str(args.seed)+'_final_states.npy')

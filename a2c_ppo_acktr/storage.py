@@ -7,11 +7,9 @@ def _flatten_helper(T, N, _tensor):
 
 
 class RolloutStorage(object):
-    def __init__(self, num_steps, num_processes, obs_shape, action_space,
-                 recurrent_hidden_state_size):
+    def __init__(self, num_steps, num_processes, obs_shape, action_space, recurrent_hidden_state_size):
         self.obs = torch.zeros(num_steps + 1, num_processes, *obs_shape)
-        self.recurrent_hidden_states = torch.zeros(
-            num_steps + 1, num_processes, recurrent_hidden_state_size)
+        self.recurrent_hidden_states = torch.zeros(num_steps + 1, num_processes, recurrent_hidden_state_size)
         self.rewards = torch.zeros(num_steps, num_processes, 1)
         self.value_preds = torch.zeros(num_steps + 1, num_processes, 1)
         self.returns = torch.zeros(num_steps + 1, num_processes, 1)
@@ -90,10 +88,7 @@ class RolloutStorage(object):
                 for step in reversed(range(self.rewards.size(0))):
                     self.returns[step] = self.returns[step + 1] * gamma * self.masks[step + 1] + self.rewards[step]
 
-    def feed_forward_generator(self,
-                               advantages,
-                               num_mini_batch=None,
-                               mini_batch_size=None):
+    def feed_forward_generator(self, advantages, num_mini_batch=None, mini_batch_size=None):
         num_steps, num_processes = self.rewards.size()[0:2]
         batch_size = num_processes * num_steps
 
@@ -102,24 +97,17 @@ class RolloutStorage(object):
                 "PPO requires the number of processes ({}) "
                 "* number of steps ({}) = {} "
                 "to be greater than or equal to the number of PPO mini batches ({})."
-                "".format(num_processes, num_steps, num_processes * num_steps,
-                          num_mini_batch))
+                "".format(num_processes, num_steps, num_processes * num_steps, num_mini_batch))
             mini_batch_size = batch_size // num_mini_batch
-        sampler = BatchSampler(
-            SubsetRandomSampler(range(batch_size)),
-            mini_batch_size,
-            drop_last=True)
+        sampler = BatchSampler(SubsetRandomSampler(range(batch_size)), mini_batch_size, drop_last=True)
         for indices in sampler:
             obs_batch = self.obs[:-1].view(-1, *self.obs.size()[2:])[indices]
-            recurrent_hidden_states_batch = self.recurrent_hidden_states[:-1].view(
-                -1, self.recurrent_hidden_states.size(-1))[indices]
-            actions_batch = self.actions.view(-1,
-                                              self.actions.size(-1))[indices]
+            recurrent_hidden_states_batch = self.recurrent_hidden_states[:-1].view(-1, self.recurrent_hidden_states.size(-1))[indices]
+            actions_batch = self.actions.view(-1, self.actions.size(-1))[indices]
             value_preds_batch = self.value_preds[:-1].view(-1, 1)[indices]
             return_batch = self.returns[:-1].view(-1, 1)[indices]
             masks_batch = self.masks[:-1].view(-1, 1)[indices]
-            old_action_log_probs_batch = self.action_log_probs.view(-1,
-                                                                    1)[indices]
+            old_action_log_probs_batch = self.action_log_probs.view(-1, 1)[indices]
             if advantages is None:
                 adv_targ = None
             else:
@@ -164,8 +152,7 @@ class RolloutStorage(object):
             value_preds_batch = torch.stack(value_preds_batch, 1)
             return_batch = torch.stack(return_batch, 1)
             masks_batch = torch.stack(masks_batch, 1)
-            old_action_log_probs_batch = torch.stack(
-                old_action_log_probs_batch, 1)
+            old_action_log_probs_batch = torch.stack(old_action_log_probs_batch, 1)
             adv_targ = torch.stack(adv_targ, 1)
 
             # States is just a (N, -1) tensor
