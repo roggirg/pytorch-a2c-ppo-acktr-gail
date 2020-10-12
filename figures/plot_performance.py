@@ -4,25 +4,26 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from collections import Counter
 
-# configs = ['kp50_special', 'kp100_special', 'kp150_special', 'kp200_special', 'kp250_special', 'kp300_special']
-# configs = ['kp50_special', 'kp100_special', 'kp200_special', 'kp300_special']
-configs = ['kp200_special', 'kp200_diffStopProb_special']
-# configs = ['kp50_special']
 
-use_tl = 'TL-'
-special_flag = ''
-global_config = "tenOpps_intention_kp200_" + special_flag + use_tl
+configs = [['kc0.1-', 'special'], ['kc0.5-', 'special'], ['kc1.0-', 'special'], ['kc1.5-', 'special'],
+           ['kc2.0-', 'special'], ['kc2.5-', 'special'], ['kc5.0-', 'special'], ['kc10.0-', 'special']]
+config_folder = ''
+
+use_tl = 'TL'
+global_config = "tenOpps_intention_kcX_" + '_' + use_tl
+nrows = 3
+ncols = 3
 
 labels = {}
-# labels["NoIntent"] = "CarEnv-TenOpponent-States-SpeedControl-"+use_tl+"v0_"
-labels['Intent'] = "CarEnv-TenOpponentWithIntention-States-SpeedControl-"+use_tl+"v0_"
+# labels["NoIntent"] = "CarEnv-TenOpponent-States-SpeedControl-"+use_tl+"-v0_"
+labels['Intent'] = "CarEnv-TenOpponentWithIntention-States-SpeedControl-"+use_tl+"-"
 
 all_mean_values = {}
 all_std_values = {}
 for key, label_val in labels.items():
     for config in configs:
         config_results = {"success": 0, "sw_crash": 0, "car_crash": 0, "out_of_time": 0, "burned_light": 0}
-        fnames = glob.glob("test_results/" + label_val + config + special_flag + "_s*_final_states.npy")
+        fnames = glob.glob("test_results/" + config_folder + label_val + config[0] + "v0_"+config[1]+"_s*_final_states.npy")
         if len(fnames) == 0:
             continue
         data = []
@@ -37,31 +38,29 @@ for key, label_val in labels.items():
                 if config_k in seed_data.keys():
                     config_results[config_k] += seed_data[config_k] / len(data)
                 else:
-                    config_results[config_k] = 0
+                    config_results[config_k] += 0
 
-        all_mean_values[key+'_'+config] = config_results
+        all_mean_values[key + '_' + config[0] + '_' + config[1]] = config_results
 
-font = {'size': 8}
+font = {'size': 10}
 plt.rc('font', **font)
 
-nrows = 1
-ncols = 2
 keys = list(all_mean_values.keys())
-fig, ax = plt.subplots(nrows=nrows, ncols=ncols)
+fig, ax = plt.subplots(nrows=nrows, ncols=ncols,figsize=(8,8))
 idx = 0
 for row in range(nrows):
     for col in range(ncols):
         if idx < len(all_mean_values):
             if nrows > 1:
                 ax[row, col].bar(all_mean_values[keys[idx]].keys(), all_mean_values[keys[idx]].values(), 0.5)
-                ax[row, col].set_title(use_tl+keys[idx], size=8)
+                ax[row, col].set_title(use_tl+keys[idx])
                 ax[row, col].set_xticklabels(list(all_mean_values[keys[idx]].keys()), rotation=20)
                 ax[row, col].axis(ymin=0, ymax=100)
                 ax[row, col].yaxis.grid(True)
             else:
                 ax[col].bar(all_mean_values[keys[idx]].keys(), all_mean_values[keys[idx]].values(), 0.5)
-                ax[col].set_title(use_tl+keys[idx], size=8)
-                ax[col].set_xticklabels(list(all_mean_values[keys[idx]].keys()), rotation=10)
+                ax[col].set_title(use_tl+keys[idx])
+                ax[col].set_xticklabels(list(all_mean_values[keys[idx]].keys()), rotation=20)
                 ax[col].axis(ymin=0, ymax=100)
                 ax[col].yaxis.grid(True)
             idx += 1
@@ -80,8 +79,8 @@ plt_col = 0
 for label_key, label_val in labels.items():
     for config in configs:
         config_results = {"success": [], "sw_crash": [], "car_crash": [], "out_of_time": [], "burned_light": []}
-        fnames_locs = sorted(glob.glob("test_results/" + label_val + config + special_flag + "*final_positions.npy"))
-        fnames_fstates = sorted(glob.glob("test_results/" + label_val + config + special_flag + "*final_states.npy"))
+        fnames_locs = sorted(glob.glob("test_results/" + config_folder + label_val + config[0] + "v0_"+config[1]+"_s*_final_positions.npy"))
+        fnames_fstates = sorted(glob.glob("test_results/" + config_folder + label_val + config[0] + "v0_"+config[1]+"_s*_final_states.npy"))
         if len(fnames_locs) == 0:
             continue
         data = []
@@ -102,10 +101,10 @@ for label_key, label_val in labels.items():
 
         if nrows > 1:
             ax[plt_row, plt_col].axis(xmin=-0.1, xmax=1.1, ymin=0, ymax=1)
-            ax[plt_row, plt_col].set_title(use_tl + label_key + '_' + config, size=8)
+            ax[plt_row, plt_col].set_title(use_tl + label_key + '_' + config[0]+'_'+config[1], size=8)
         else:
             ax[plt_col].axis(xmin=-0.1, xmax=1.1, ymin=0, ymax=1)
-            ax[plt_col].set_title(use_tl + label_key + '_' + config, size=8)
+            ax[plt_col].set_title(use_tl + label_key + '_' + config[0]+'_'+config[1], size=8)
 
         idx += 1
         plt_col += 1

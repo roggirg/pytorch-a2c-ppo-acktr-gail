@@ -423,6 +423,12 @@ class AttnMLP(NNBase):
                 init_(nn.Linear(hidden_size, 1))
             )
 
+            if not self.is_recurrent:
+                self.agentopponent_encoder = nn.Sequential(
+                    init_(nn.Linear(3*hidden_size, hidden_size)), nn.Tanh(),
+                    init_(nn.Linear(hidden_size, hidden_size))
+                )
+
             if self.predict_intention:
                 # A model that predicts intention based on opponent state
                 self.intention_prediction = nn.Sequential(
@@ -445,8 +451,8 @@ class AttnMLP(NNBase):
     def forward(self, inputs, rnn_hxs, masks):
         x = inputs
         batch_size = inputs.size(0)
-        agent_state = self.agent_model(x[:, 0:5])
-        env_state = self.env_model(x[:, 5:13])
+        agent_state = self.agent_model(x[:, :self.agent_dim])
+        env_state = self.env_model(x[:, self.agent_dim:self.agent_dim+self.env_dim])
         expanded_agentenv_state = torch.cat((agent_state, env_state), dim=-1).repeat(1, self.num_opponents).view(batch_size*self.num_opponents, -1)
 
         if self.num_opponents > 0:
@@ -457,8 +463,10 @@ class AttnMLP(NNBase):
             opponentdyn_enc = self.opponent_model(opponent_state[:, :self.opponent_dim])
             if self.is_recurrent:
                 opponentdyn_enc, rnn_hxs = self._forward_gru(
-                    torch.cat((expanded_agentenv_state, opponentdyn_enc), dim=-1) * active_opp, rnn_hxs, masks
-                )
+                    torch.cat((expanded_agentenv_state, opponentdyn_enc), dim=-1) * active_opp, rnn_hxs, masks)
+            else:
+                opponentdyn_enc = torch.cat((expanded_agentenv_state, opponentdyn_enc), dim=-1) * active_opp
+                opponentdyn_enc = self.agentopponent_encoder(opponentdyn_enc)
 
             # Computing attention
             attention_weights = F.softmax(

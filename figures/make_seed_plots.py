@@ -4,7 +4,7 @@ import glob
 import json
 
 
-configs = ['kp50_special']
+configs = ['kp200_startVel_special']
 
 
 def running_mean(x, N):
@@ -12,8 +12,8 @@ def running_mean(x, N):
     return (cumsum[N:] - cumsum[:-N]) / float(N)
 
 labels = {}
-labels["NoIntent"] = "CarEnv-TenOpponent-States-SpeedControl-v0_"
-labels['Intent'] = "CarEnv-TenOpponentWithIntention-States-SpeedControl-v0_"
+labels["NoIntent"] = "CarEnv-TenOpponent-States-SpeedControl-TL-v0_"
+labels['Intent'] = "CarEnv-TenOpponentWithIntention-States-SpeedControl-TL-v0_"
 
 for config in configs:
     print(glob.glob("data/"+labels["NoIntent"]+config+"*.npy"))
@@ -37,4 +37,4 @@ plt.legend(loc='lower right')
 plt.xlabel('Training Step', fontsize=12)
 plt.ylabel('Episodic Reward', fontsize=12)
 plt.tight_layout()
-plt.savefig("CarEnv-TenOpponent_states_SpeedControl_ppo_experiments_3M.png")
+plt.savefig("CarEnv-TenOpponent_states_SpeedControl_TL_ppo_experiments_3M.png")

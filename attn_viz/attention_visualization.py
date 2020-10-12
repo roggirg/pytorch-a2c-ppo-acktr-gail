@@ -7,9 +7,11 @@ import cv2
 import os
 
 
-label = "noIntention"
-traj_index = 78
+label = "Intention"
+traj_index = 55
+special_flag = 'contSetSpeed_'
 image_folder = "trajectory_dataset/attn_figs"
+video_name = 'trajectory_dataset/attn_trajectory_'+label+'Model_'+special_flag+'traj'+str(traj_index)+'.mp4'
 
 filelist = glob.glob(os.path.join(image_folder, "*.png"))
 for f in filelist:
@@ -38,7 +40,7 @@ hidden_size = 32
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 if "no" not in label:
     actor_critic, ob_rms = torch.load(
-        "trained_models/ppo/CarEnv-TenOpponentWithIntention-States-SpeedControl-TL-v0_kp250_special_s0.pt",
+        "trained_models/ppo/CarEnv-TenOpponentWithIntention-States-SpeedControl-TL-v0_"+special_flag+"special_s3.pt",
         map_location=lambda storage, loc: storage
     )
     intention_multiplier = 1.0
@@ -83,11 +85,6 @@ for i in range(len(trajectories[traj_index])):
     intention_colors = intention_to_color(intention_label)
     for idx in range(num_opponents):
         if not (abs(opp_positions[idx, 0]) < 0.01 and abs(opp_positions[idx, 1]) < 0.01):
-            # plt.text(opp_positions[idx, 0] + agent_position[0], opp_positions[idx, 1] + agent_position[1], attn_ws[idx], fontsize=8)
-
-            # circle = plt.Circle((opp_positions[idx, 0] + agent_position[0], opp_positions[idx, 1] + agent_position[1]), radius=attn_ws[idx]/10, color='w')
-            # ax.add_artist(circle)
-
             vel_norm = opp_velocities[idx] / (np.linalg.norm(opp_velocities[idx])+1e-05)
             plt.arrow(opp_positions[idx, 0] + agent_position[0], opp_positions[idx, 1] + agent_position[1],
                       0.02*np.linalg.norm(opp_velocities[idx])*vel_norm[0], 0.02*np.linalg.norm(opp_velocities[idx])*vel_norm[1],
@@ -99,11 +96,9 @@ for i in range(len(trajectories[traj_index])):
     plt.scatter(agent_position[0], agent_position[1], color='y')
     plt.axis(xmin=-0.1, xmax=1.1, ymin=0, ymax=1)
     ax.set_facecolor('gray')
-    plt.title(label + " Model - Timestep " + str(i))
+    plt.title(label + " Model - " + special_flag + " - Timestep " + str(i))
     plt.savefig("trajectory_dataset/attn_figs/step_"+f"{i:05d}.png")
 
-
-video_name = 'trajectory_dataset/attn_trajectory_'+label+'Model_traj'+str(traj_index)+'.mp4'
 
 images = sorted([img for img in os.listdir(image_folder) if img.endswith(".png")])
 frame = cv2.imread(os.path.join(image_folder, images[0]))
