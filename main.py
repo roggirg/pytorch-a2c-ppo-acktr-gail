@@ -25,9 +25,14 @@ from evaluation import evaluate
 def main():
     args = get_args()
 
-    traindir_name = "LR{0}NSteps{1}".format(args.lr, args.num_steps)
+    traindir_name = args.base_encoder + "_model"
+    if args.recurrent_policy:
+        traindir_name += "_recurrent"
+    traindir_name += "/LR{0}NSteps{1}".format(args.lr, args.num_steps)
+    if "TL" in args.env_name:
+        traindir_name += "_TL"
 
-    args.config += args.base_mlp
+    args.config += args.base_encoder
     if args.recurrent_policy:
         args.config += "_recurrent"
     print("CONFIG:", args.config)
@@ -52,7 +57,7 @@ def main():
 
     actor_critic = Policy(envs.observation_space.shape, envs.action_space,
                           base_kwargs={'recurrent': args.recurrent_policy, 'predict_intention': args.predict_intention},
-                          base_mlp=args.base_mlp)
+                          base_encoder=args.base_encoder)
     actor_critic.to(device)
 
     if args.algo == 'a2c':
@@ -188,13 +193,13 @@ def main():
             end = time.time()
             print(
                 "Updates {}, num timesteps {}, FPS {} \n Last {} training episodes: "
-                "mean/median reward {:.1f}/{:.1f}, min/max reward {:.1f}/{:.1f}\n"
+                "mean/median reward {:.1f}/{:.1f}, min/max reward {:.1f}/{:.1f}"
                 .format(j, total_num_steps,
                         int(total_num_steps / (end - start)),
                         len(episode_rewards), np.mean(episode_rewards),
                         np.median(episode_rewards), np.min(episode_rewards),
                         np.max(episode_rewards), dist_entropy, value_loss,
-                        action_loss))
+                        action_loss), final_states, "\n")
 
             all_rewards.append(np.mean(episode_rewards))
 
@@ -210,7 +215,7 @@ def main():
                 best_success = final_states_data[-1]['success']
                 torch.save([actor_critic, getattr(utils.get_vec_normalize(envs), 'ob_rms', None)],
                            os.path.join(save_path, args.env_name + '_' + args.config + '_s'+str(args.seed)+
-                                        "_best"+str(len(final_states_data))+".pt"))
+                                        "_best.pt"))
 
             torch.save([actor_critic, getattr(utils.get_vec_normalize(envs), 'ob_rms', None)],
                        os.path.join(save_path, args.env_name + '_' + args.config + '_s' + str(args.seed) + ".pt"))

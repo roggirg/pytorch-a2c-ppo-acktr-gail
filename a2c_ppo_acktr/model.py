@@ -13,23 +13,24 @@ class Flatten(nn.Module):
 
 
 class Policy(nn.Module):
-    def __init__(self, obs_shape, action_space, base=None, base_kwargs=None, base_mlp='simple'):
+    def __init__(self, obs_shape, action_space, base=None, base_kwargs=None, base_encoder='simple'):
         super(Policy, self).__init__()
         if base_kwargs is None:
             base_kwargs = {}
         if base is None:
             if len(obs_shape) == 3:
                 base = CNNBase
-                # base = SpecialCNNBase
             elif len(obs_shape) == 1:
-                if 'simple' in base_mlp:
+                if 'mlp' in base_encoder:
                     base = MLPBase
-                elif 'deep' in base_mlp:
+                elif 'deep' in base_encoder:
                     base = DeepMLPBase
-                elif 'attn' in base_mlp:
+                elif 'attn' in base_encoder:
                     base = AttnMLP
-                elif 'special' in base_mlp:
+                elif 'special' in base_encoder:
                     base = SpecialMLP
+                elif 'MHSA' in base_encoder:
+                    base = MHeadAttnModel
             else:
                 raise NotImplementedError
 
@@ -468,6 +469,88 @@ class AttnMLP(NNBase):
             x = torch.cat((agent_state, env_state, attended_opponentdyn_enc), dim=-1)
         else:
             x = torch.cat((agent_state, env_state), dim=-1)
+
+        hidden_critic = self.critic(x)
+        hidden_actor = self.actor(x)
+
+        return self.critic_linear(hidden_critic), hidden_actor, rnn_hxs
+
+
+class MHeadAttnModel(NNBase):
+    '''
+    MLP class specialized for car environment with opponents.
+    '''
+    def __init__(self, num_inputs, recurrent=False, hidden_size=64, predict_intention=False):
+        self.predict_intention = predict_intention
+        self.hidden_size = hidden_size
+        self.agent_dim = 5  # pos(2), vel(2), heading(1)
+        self.env_dim = 8  # four corners of the environment(4), light status(4)
+        self.opponent_dim = 5  # pos(2), vel(2), heading(1)
+        self.intention_dim = 4  # one-hot vector for four possible intentions(4)
+        self.num_opponents = int((num_inputs-self.agent_dim-self.env_dim) / (self.opponent_dim+self.intention_dim+1))
+        act_crit_dim = hidden_size + self.intention_dim
+        super(MHeadAttnModel, self).__init__(recurrent, hidden_size*self.num_opponents, hidden_size, model_type='mhead')
+
+        init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.constant_(x, 0), np.sqrt(2))
+
+        self.agent_model = nn.Sequential(
+            init_(nn.Linear(self.agent_dim+self.env_dim, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh()
+        )
+
+        if self.num_opponents > 0:
+            self.opponent_model = nn.Sequential(
+                init_(nn.Linear(self.opponent_dim+self.env_dim, hidden_size)), nn.Tanh(),
+                init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh()
+            )
+
+            self.num_heads = 4
+            self.attention_model1 = nn.MultiheadAttention(hidden_size, self.num_heads)
+            self.attention_model2 = nn.MultiheadAttention(hidden_size+self.intention_dim, self.num_heads)
+
+        self.actor = nn.Sequential(
+            init_(nn.Linear(act_crit_dim, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh())
+
+        self.critic = nn.Sequential(
+            init_(nn.Linear(act_crit_dim, hidden_size)), nn.Tanh(),
+            init_(nn.Linear(hidden_size, hidden_size)), nn.Tanh())
+
+        self.critic_linear = init_(nn.Linear(hidden_size, 1))
+
+        self.train()
+
+    def forward(self, inputs, rnn_hxs, masks):
+        x = inputs
+        batch_size = inputs.size(0)
+        agent_enc = self.agent_model(x[:, :self.agent_dim+self.env_dim])
+        env_state = x[:, self.agent_dim:self.agent_dim+self.env_dim].repeat(1, self.num_opponents).view(batch_size*self.num_opponents, -1)
+
+        if self.num_opponents > 0:
+            # encoding opponent state
+            opponent_state = x[:, self.agent_dim+self.env_dim:].reshape((-1, self.opponent_dim+self.intention_dim+1))
+            intention = opponent_state[:, self.opponent_dim:self.opponent_dim + self.intention_dim].reshape(batch_size, -1)
+            active_opp = opponent_state[:, -1].unsqueeze(1).view(batch_size, self.num_opponents, -1)
+            opponentdyn_enc = (
+                self.opponent_model(torch.cat((opponent_state[:, :self.opponent_dim], env_state), dim=-1))
+            ).view((batch_size, self.num_opponents, -1)) * active_opp
+
+            # First self attention layer -  Social attention
+            agentopps_tensor = torch.cat((agent_enc, opponentdyn_enc.view(batch_size, self.num_opponents*self.hidden_size)), dim=-1).\
+                view(batch_size, self.num_opponents+1, self.hidden_size).transpose(0, 1)
+            socialattn_output, socialattn_weights = self.attention_model1(agentopps_tensor, agentopps_tensor, agentopps_tensor)
+            socialattn_output = socialattn_output + agentopps_tensor  # residual connection
+
+            # Second self attention layer - Policy attention
+            ego_intention = torch.zeros(batch_size, self.intention_dim).to("cuda")
+            agent_enc = torch.cat((agent_enc, ego_intention), dim=-1)
+            all_intentions = torch.cat((ego_intention, intention), dim=-1).view(batch_size, self.num_opponents+1, -1).transpose(0, 1)
+            socialattn_intention = torch.cat((socialattn_output, all_intentions), dim=-1)
+            agent_attn_output, agent_attn_weights = self.attention_model2(agent_enc.unsqueeze(0), socialattn_intention, socialattn_intention)
+
+            x = agent_attn_output.squeeze(0)
+        else:
+            x = agent_enc
 
         hidden_critic = self.critic(x)
         hidden_actor = self.actor(x)

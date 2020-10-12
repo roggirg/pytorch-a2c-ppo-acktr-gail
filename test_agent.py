@@ -53,7 +53,7 @@ eval_seed = 1000
 torch.manual_seed(eval_seed)
 torch.cuda.manual_seed_all(eval_seed)
 
-num_processes = 10
+num_processes = 16
 env = make_vec_envs(args.env_name, eval_seed, num_processes, None, None, device=device, allow_early_resets=False, pixels=False)
 
 # Get a render function
@@ -92,6 +92,7 @@ while True:
             obs, recurrent_hidden_states, masks, deterministic=args.det)
 
     # Obser reward and next obs
+    # action[action != 1] = 1
     obs, reward, done, info = env.step(action)
     total_reward += reward
     t += 1
@@ -106,13 +107,13 @@ while True:
                 else:
                     final_positions.append(info[i][key])
 
-    if len(final_positions) > 100:
+    if len(final_positions) > 999:
         break
 
     # masks.fill_(0.0 if done else 1.0)
     masks = torch.FloatTensor([[0.0] if done_ else [1.0] for done_ in done]).to(device)
 
-print("Seed:", args.seed, "Result:", Counter(final_states[:100]))
+print("Seed:", args.seed, "Result:", Counter(final_states))
 fname = os.path.join("figures/test_results", args.env_name+'_'+args.config+'_'+args.save_flag+'s'+str(args.seed)+'_final_states.npy')
 np.save(fname, final_states)
 fname = os.path.join("figures/test_results", args.env_name+'_'+args.config+'_'+args.save_flag+'s'+str(args.seed)+'_final_positions.npy')
