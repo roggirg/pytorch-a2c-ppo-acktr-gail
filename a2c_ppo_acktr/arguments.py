@@ -162,7 +162,7 @@ def get_args():
     parser.add_argument(
         '--base-encoder',
         default='simple',
-        choices=['mlp', 'deep', 'attn', 'special', 'MHSA'],
+        choices=['mlp', 'deep', 'attn', 'MHSA', 'special'],
         help='Run experiments from Pixels')
     parser.add_argument(
         '--predict-intention',
