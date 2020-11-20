@@ -3,6 +3,7 @@ import torch
 
 from a2c_ppo_acktr import utils
 from a2c_ppo_acktr.envs import make_vec_envs
+from collections import Counter
 
 
 def evaluate(actor_critic, ob_rms, env_name, seed, num_processes, eval_log_dir,
@@ -45,3 +46,41 @@ def evaluate(actor_critic, ob_rms, env_name, seed, num_processes, eval_log_dir,
 
     print(" Evaluation using {} episodes: mean reward {:.5f}\n".format(
         len(eval_episode_rewards), np.mean(eval_episode_rewards)))
+
+
+def evaluate_carenv(actor_critic, env_name, eval_seed, num_processes, device, num_eval_episodes=100):
+    env = make_vec_envs(env_name, eval_seed, num_processes, None, None, device=device,
+                        allow_early_resets=False, pixels=False)
+
+    recurrent_hidden_states = torch.zeros(num_processes, actor_critic.recurrent_hidden_state_size).to(device)
+    masks = torch.zeros(num_processes, 1).to(device)
+    obs = env.reset()
+    t = 0
+    final_states = []
+    final_positions = []
+    while True:
+        with torch.no_grad():
+            value, action, _, recurrent_hidden_states = actor_critic.act(obs, recurrent_hidden_states, masks)
+
+        # Obser reward and next obs
+        obs, reward, done, info = env.step(action)
+        t += 1
+        for i, done_ in enumerate(done):
+            if done_:
+                if len(final_positions) % 10 == 0:
+                    print(len(final_positions))
+                for key in info[i].keys():
+                    if 'final_position' not in key:
+                        final_states.append(key)
+                    else:
+                        final_positions.append(info[i][key])
+
+        if len(final_positions) > num_eval_episodes:
+            break
+
+        # masks.fill_(0.0 if done else 1.0)
+        masks = torch.FloatTensor([[0.0] if done_ else [1.0] for done_ in done]).to(device)
+
+    env.close()
+    print("Evaluation Performance:", Counter(final_states[:num_eval_episodes]))
+    return Counter(final_states[:num_eval_episodes])

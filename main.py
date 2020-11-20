@@ -1,6 +1,7 @@
 import copy
 import glob
 import os
+import pickle
 import time
 from collections import deque
 import json
@@ -19,7 +20,7 @@ from a2c_ppo_acktr.arguments import get_args
 from a2c_ppo_acktr.envs import make_vec_envs
 from a2c_ppo_acktr.model import Policy
 from a2c_ppo_acktr.storage import RolloutStorage
-from evaluation import evaluate
+from evaluation import evaluate, evaluate_carenv
 
 
 def main():
@@ -116,8 +117,6 @@ def main():
     num_updates = int(args.num_env_steps) // args.num_steps // args.num_processes
     print("Total number of updates:", num_updates)
 
-    final_states = {"success": 0, "sw_crash": 0, "car_crash": 0, "out_of_time": 0, "burned_light": 0}
-    episode_count = 0
     final_states_data = []
     best_success = 0
 
@@ -141,17 +140,6 @@ def main():
             for info in infos:
                 if 'episode' in info.keys():
                     episode_rewards.append(info['episode']['r'])
-                if len(info.keys()) > 1:
-                    for key in info.keys():
-                        if 'final_pos' in key or 'episode' in key:
-                            continue
-                        final_states[key] += 1
-                        episode_count += 1
-                        if episode_count == 100:
-                            final_states_data.append(final_states)
-                            episode_count = 0
-                            final_states = {"success": 0, "sw_crash": 0, "car_crash": 0, "out_of_time": 0,
-                                            "burned_light": 0}
 
             # If done then clean the history of observations.
             masks = torch.FloatTensor([[0.0] if done_ else [1.0] for done_ in done])
@@ -200,9 +188,21 @@ def main():
                         len(episode_rewards), np.mean(episode_rewards),
                         np.median(episode_rewards), np.min(episode_rewards),
                         np.max(episode_rewards), dist_entropy, value_loss,
-                        action_loss), final_states, "\n")
+                        action_loss), "\n")
 
             all_rewards.append(np.mean(episode_rewards))
+
+        if args.eval_interval is not None and len(episode_rewards) > 1 and j % args.eval_interval == 0:
+            if "CarEnv" not in args.env_name:
+                ob_rms = utils.get_vec_normalize(envs).ob_rms
+                evaluate(actor_critic, ob_rms, args.env_name, args.seed, args.num_processes, eval_log_dir, device)
+            else:
+                eval_fstates = evaluate_carenv(actor_critic, args.env_name, args.seed, args.num_processes, device)
+                final_states_data.append(dict(eval_fstates))
+                save_path = os.path.join(args.save_dir, args.algo, traindir_name)
+                fname = os.path.join(save_path, args.env_name + '_' + args.config + '_s' + str(args.seed) + '_fstates.pickle')
+                with open(fname, 'wb') as handle:
+                    pickle.dump(final_states_data, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
         # save for every interval-th episode or for the last epoch
         if (j % args.save_interval == 0 or j == num_updates - 1) and args.save_dir != "":
@@ -212,7 +212,7 @@ def main():
             except OSError:
                 pass
 
-            if len(final_states_data) > 0and final_states_data[-1]['success'] > best_success:
+            if len(final_states_data) > 0 and final_states_data[-1]['success'] > best_success:
                 best_success = final_states_data[-1]['success']
                 torch.save([actor_critic, getattr(utils.get_vec_normalize(envs), 'ob_rms', None)],
                            os.path.join(save_path, args.env_name + '_' + args.config + '_s'+str(args.seed)+
@@ -223,13 +223,6 @@ def main():
 
             np.save(os.path.join(save_path, args.env_name + '_' + args.config + '_s' + str(args.seed) + '.npy'),
                     all_rewards)
-
-            fname = os.path.join(save_path, args.env_name + '_' + args.config + '_s' + str(args.seed) + '_final_states.npy')
-            np.save(fname, final_states_data)
-
-        if args.eval_interval is not None and len(episode_rewards) > 1 and j % args.eval_interval == 0:
-            ob_rms = utils.get_vec_normalize(envs).ob_rms
-            evaluate(actor_critic, ob_rms, args.env_name, args.seed, args.num_processes, eval_log_dir, device)
 
 
 if __name__ == "__main__":
