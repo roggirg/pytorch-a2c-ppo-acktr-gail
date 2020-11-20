@@ -212,11 +212,12 @@ def main():
             except OSError:
                 pass
 
-            if len(final_states_data) > 0 and final_states_data[-1]['success'] > best_success:
-                best_success = final_states_data[-1]['success']
-                torch.save([actor_critic, getattr(utils.get_vec_normalize(envs), 'ob_rms', None)],
-                           os.path.join(save_path, args.env_name + '_' + args.config + '_s'+str(args.seed)+
-                                        "_best.pt"))
+            if len(final_states_data) > 0 and 'success' in final_states_data[-1].keys():
+                if final_states_data[-1]['success'] > best_success:
+                    best_success = final_states_data[-1]['success']
+                    torch.save([actor_critic, getattr(utils.get_vec_normalize(envs), 'ob_rms', None)],
+                               os.path.join(save_path, args.env_name + '_' + args.config + '_s'+str(args.seed)+
+                                            "_best.pt"))
 
             torch.save([actor_critic, getattr(utils.get_vec_normalize(envs), 'ob_rms', None)],
                        os.path.join(save_path, args.env_name + '_' + args.config + '_s' + str(args.seed) + ".pt"))
